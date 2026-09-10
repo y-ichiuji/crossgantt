@@ -12,7 +12,7 @@ import { Hono } from 'hono'
 
 import { diffDays, isDateKey } from '../shared/date'
 import { MAX_RANGE_DAYS, parseBool, parseIdList, parseNameList } from '../shared/filter'
-import type { ApiErrorBody, IssuesResponse, ProjectSummary, StatusGroup } from '../shared/types'
+import type { ApiErrorBody, Holiday, IssuesResponse, ProjectSummary, StatusGroup } from '../shared/types'
 import { resolveOAuthConfig } from './auth/config'
 import type { AppBindings } from './auth/config'
 import { needsRefresh, OAuthError, refreshTokens } from './auth/oauth'
@@ -21,6 +21,7 @@ import { BacklogApiError, BacklogClient } from './backlog/client'
 import { fetchGanttIssues } from './backlog/issues'
 import { fetchMembers, fetchProjects, fetchStatusGroups, resolveStatusIds } from './backlog/masters'
 import { hashKey, matchCachedResponse, putCachedResponse, withJsonCache } from './cache'
+import { fetchHolidays } from './holidays'
 
 export type ApiEnv = {
   Bindings: AppBindings
@@ -144,6 +145,23 @@ async function accessibleProjects(
   const requestedIds = new Set(requested)
   return projects.filter((project) => requestedIds.has(project.id))
 }
+
+/**
+ * 表示期間内の日本の祝日。
+ *
+ * 利用者に依存しない情報なので、キャッシュもスペース単位では分けない。
+ */
+api.get('/holidays', async (c) => {
+  const from = c.req.query('from') ?? ''
+  const to = c.req.query('to') ?? ''
+  if (!isDateKey(from) || !isDateKey(to) || from > to) {
+    return c.json<ApiErrorBody>({ error: '表示期間の指定が正しくありません' }, 400)
+  }
+  if (diffDays(from, to) + 1 > MAX_RANGE_DAYS) {
+    return c.json<ApiErrorBody>({ error: `表示期間が長すぎます（最大 ${MAX_RANGE_DAYS} 日）` }, 400)
+  }
+  return c.json<Holiday[]>(await fetchHolidays(from, to))
+})
 
 /** 参加中のプロジェクト一覧。 */
 api.get('/projects', async (c) => {

@@ -102,3 +102,15 @@
   padding: 8px;
   color: var(--text-muted);
 }
+
+/* 絞り込み中に Enter が何を選ぶかを示す。 */
+.hint {
+  margin: 0;
+  padding: 4px 8px 2px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

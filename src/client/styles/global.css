@@ -20,6 +20,9 @@
   --danger: #dc2626;
   --danger-bg: #fee2e2;
   --weekend: rgba(0, 0, 0, 0.04);
+  /* 祝日は土日より濃くして、並んだときに区別が付くようにする。 */
+  --holiday: rgba(220, 38, 38, 0.07);
+  --holiday-text: #b4413f;
   --grid-line: rgba(0, 0, 0, 0.05);
   /* 今日は列全体を塗って示すため、バーの色を邪魔しない薄さにする。 */
   --today-band: rgba(239, 68, 68, 0.1);
@@ -51,6 +54,8 @@
     --danger: #f87171;
     --danger-bg: #45201f;
     --weekend: rgba(255, 255, 255, 0.045);
+    --holiday: rgba(248, 113, 113, 0.1);
+    --holiday-text: #f0a3a1;
     --grid-line: rgba(255, 255, 255, 0.06);
     --today-band: rgba(248, 113, 113, 0.16);
     --today-edge: rgba(248, 113, 113, 0.45);

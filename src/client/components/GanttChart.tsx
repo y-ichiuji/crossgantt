@@ -6,6 +6,7 @@ import {
   buildScale,
   filterByRange,
   groupIssues,
+  holidayBands,
   hasNoDate,
   isOverdue,
   minorTicks,
@@ -16,7 +17,7 @@ import {
   todayBand,
   weekendBands
 } from '../../shared/gantt'
-import type { GanttIssue, ViewFilter } from '../../shared/types'
+import type { GanttIssue, Holiday, ViewFilter } from '../../shared/types'
 import { AssigneeAvatar } from './AssigneeAvatar'
 import { IssueTooltip } from './IssueTooltip'
 import type { TooltipState } from './IssueTooltip'
@@ -28,12 +29,14 @@ type Props = {
   filter: ViewFilter
   today: string
   projectNames: Record<number, string>
+  /** 表示期間内の日本の祝日。取得前や取得に失敗したときは空配列。 */
+  holidays: readonly Holiday[]
 }
 
 /** 行の高さ（px）。CSS 側の値と合わせること。 */
 const ROW_HEIGHT = 28
 
-export function GanttChart({ issues, filter, today, projectNames }: Props) {
+export function GanttChart({ issues, filter, today, projectNames, holidays }: Props) {
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
   const [tooltip, setTooltip] = useState<TooltipState | null>(null)
 
@@ -52,6 +55,8 @@ export function GanttChart({ issues, filter, today, projectNames }: Props) {
   const majors = useMemo(() => monthTicks(scale), [scale])
   const minors = useMemo(() => minorTicks(scale, filter.zoom), [scale, filter.zoom])
   const weekends = useMemo(() => weekendBands(scale, filter.zoom), [scale, filter.zoom])
+  const holidayBandList = useMemo(() => holidayBands(scale, filter.zoom, holidays), [scale, filter.zoom, holidays])
+  const holidayByKey = useMemo(() => new Map(holidayBandList.map((band) => [band.key, band.label])), [holidayBandList])
   const todayColumn = useMemo(() => todayBand(scale, filter.zoom, today), [scale, filter.zoom, today])
 
   const toggleGroup = (key: string) => {
@@ -110,7 +115,16 @@ export function GanttChart({ issues, filter, today, projectNames }: Props) {
                 style={{ left: band.left, width: band.width }}
               />
             ))}
-            {/* 今日が土日に当たることもあるため、土日の帯より後に重ねる。 */}
+            {/* 祝日は土日より濃く塗るので、土日の帯より後に重ねる。 */}
+            {holidayBandList.map((band) => (
+              <div
+                key={band.key}
+                className={styles.holiday}
+                data-testid="holiday-band"
+                style={{ left: band.left, width: band.width }}
+              />
+            ))}
+            {/* 今日が土日・祝日に当たることもあるため、いちばん後に重ねる。 */}
             {todayColumn ? (
               <div
                 className={styles.today}
@@ -140,6 +154,9 @@ export function GanttChart({ issues, filter, today, projectNames }: Props) {
                     className={styles.tick}
                     // 帯はヘッダーの下に隠れるため、目盛り側でも今日の列を示す。
                     data-today={tick.key === todayColumn?.key}
+                    // 帯は装飾（aria-hidden）なので、祝日の名称はここで伝える。
+                    data-holiday={holidayByKey.has(tick.key)}
+                    title={holidayByKey.get(tick.key)}
                     style={{ left: tick.left, width: tick.width }}
                   >
                     {tick.label}
