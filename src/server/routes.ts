@@ -12,17 +12,20 @@ import { Hono } from 'hono'
 
 import { isDateKey } from '../shared/date'
 import type { ApiErrorBody, IssuesResponse } from '../shared/types'
+import { type AppBindings, resolveOAuthConfig } from './auth/config'
+import { needsRefresh, OAuthError, refreshTokens } from './auth/oauth'
+import { getSession, putSession, readCookie, SESSION_COOKIE } from './auth/session'
 import { BacklogApiError, BacklogClient } from './backlog/client'
 import { fetchGanttIssues } from './backlog/issues'
-import { fetchMembers, fetchProjects, fetchStatusGroups, fetchViewer, resolveStatusIds } from './backlog/masters'
-import { normalizeSpace } from './backlog/space'
+import { fetchMembers, fetchProjects, fetchStatusGroups, resolveStatusIds } from './backlog/masters'
 import { hashKey, withJsonCache } from './cache'
 
 export type ApiEnv = {
-  Bindings: CloudflareBindings
+  Bindings: AppBindings
   Variables: {
     client: BacklogClient
-    apiKeyHash: string
+    /** キャッシュをユーザーごとに分けるためのキー。 */
+    scopeHash: string
   }
 }
 
@@ -32,33 +35,52 @@ const MASTER_TTL = 300
 /** 課題のキャッシュ秒数。連打による Search 区分の消費を抑える。 */
 const ISSUES_TTL = 60
 
-/** API キーとして受け付ける形式。空白や制御文字を含むものは弾く。 */
-const API_KEY_PATTERN = /^[A-Za-z0-9_-]{8,256}$/
-
 export const api = new Hono<ApiEnv>()
 
 api.use('*', async (c, next) => {
   // 認証情報を含むレスポンスなので、経路上のどこにもキャッシュさせない。
   c.header('Cache-Control', 'no-store')
 
-  const space = normalizeSpace(c.req.header('X-Backlog-Space'))
-  if (!space) {
-    return c.json<ApiErrorBody>(
-      {
-        error: 'Backlog のスペースドメインが正しくありません',
-        detail: 'example.backlog.jp / example.backlog.com / example.backlogtool.com の形式で指定してください'
-      },
-      400
-    )
+  const sessionId = readCookie(c.req.header('Cookie'), SESSION_COOKIE)
+  if (!sessionId) {
+    return c.json<ApiErrorBody>({ error: 'ログインしていません' }, 401)
   }
 
-  const apiKey = c.req.header('X-Backlog-Api-Key')?.trim()
-  if (!apiKey || !API_KEY_PATTERN.test(apiKey)) {
-    return c.json<ApiErrorBody>({ error: 'API キーが指定されていないか、形式が正しくありません' }, 401)
+  const session = await getSession(c.env.SESSIONS, sessionId)
+  if (!session) {
+    return c.json<ApiErrorBody>({ error: 'セッションの有効期限が切れています' }, 401)
   }
 
-  c.set('client', new BacklogClient({ space, apiKey }))
-  c.set('apiKeyHash', await hashKey(space, apiKey))
+  let accessToken = session.accessToken
+  const now = Date.now()
+
+  // 期限が近いアクセストークンはここで更新しておく。
+  // リクエストの途中で切れて 401 になるのを防ぐため、少し前倒しで更新する。
+  if (needsRefresh(session.expiresAt, now)) {
+    const config = resolveOAuthConfig(c.env, c.req.url)
+    if (!config) {
+      return c.json<ApiErrorBody>({ error: 'OAuth の設定が未完了です' }, 500)
+    }
+    try {
+      const tokens = await refreshTokens(session.space, config, session.refreshToken, now)
+      accessToken = tokens.accessToken
+      await putSession(c.env.SESSIONS, sessionId, {
+        ...session,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        expiresAt: tokens.expiresAt
+      })
+    } catch (error: unknown) {
+      if (error instanceof OAuthError) {
+        return c.json<ApiErrorBody>({ error: '認証の更新に失敗しました。ログインし直してください' }, 401)
+      }
+      throw error
+    }
+  }
+
+  c.set('client', new BacklogClient({ space: session.space, accessToken }))
+  // アクセストークンは更新のたびに変わるため、キャッシュキーにはスペースとユーザー ID を使う。
+  c.set('scopeHash', await hashKey(session.space, String(session.userId)))
   await next()
 })
 
@@ -106,16 +128,10 @@ function shouldBypassCache(value: string | undefined): boolean {
   return parseBool(value)
 }
 
-/** API キーの検証を兼ねた接続確認。 */
-api.post('/connect', async (c) => {
-  const viewer = await fetchViewer(c.var.client)
-  return c.json(viewer)
-})
-
 /** 参加中のプロジェクト一覧。 */
 api.get('/projects', async (c) => {
   const bypass = shouldBypassCache(c.req.query('refresh'))
-  const projects = await withJsonCache('projects', [c.var.apiKeyHash], MASTER_TTL, bypass, () =>
+  const projects = await withJsonCache('projects', [c.var.scopeHash], MASTER_TTL, bypass, () =>
     fetchProjects(c.var.client)
   )
   return c.json(projects)
@@ -125,7 +141,7 @@ api.get('/projects', async (c) => {
 api.get('/members', async (c) => {
   const projectIds = parseIds(c.req.query('projectIds'))
   const bypass = shouldBypassCache(c.req.query('refresh'))
-  const members = await withJsonCache('members', [c.var.apiKeyHash, projectIds.join(',')], MASTER_TTL, bypass, () =>
+  const members = await withJsonCache('members', [c.var.scopeHash, projectIds.join(',')], MASTER_TTL, bypass, () =>
     fetchMembers(c.var.client, projectIds)
   )
   return c.json(members)
@@ -135,7 +151,7 @@ api.get('/members', async (c) => {
 api.get('/statuses', async (c) => {
   const projectIds = parseIds(c.req.query('projectIds'))
   const bypass = shouldBypassCache(c.req.query('refresh'))
-  const statuses = await withJsonCache('statuses', [c.var.apiKeyHash, projectIds.join(',')], MASTER_TTL, bypass, () =>
+  const statuses = await withJsonCache('statuses', [c.var.scopeHash, projectIds.join(',')], MASTER_TTL, bypass, () =>
     fetchStatusGroups(c.var.client, projectIds)
   )
   return c.json(statuses)
@@ -164,7 +180,7 @@ api.get('/issues', async (c) => {
   }
 
   const cacheKeyParts = [
-    c.var.apiKeyHash,
+    c.var.scopeHash,
     projectIds.join(','),
     assigneeIds.join(','),
     statusNames.join(','),
@@ -182,7 +198,7 @@ api.get('/issues', async (c) => {
     // ステータス一覧の取得そのものを省いてリクエスト数を減らす。
     let statusIds: number[] = []
     if (!includeClosed || statusNames.length > 0) {
-      const groups = await withJsonCache('statuses', [c.var.apiKeyHash, projectIds.join(',')], MASTER_TTL, bypass, () =>
+      const groups = await withJsonCache('statuses', [c.var.scopeHash, projectIds.join(',')], MASTER_TTL, bypass, () =>
         fetchStatusGroups(client, projectIds)
       )
       statusIds = resolveStatusIds(groups, statusNames, includeClosed)

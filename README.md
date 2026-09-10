@@ -17,22 +17,52 @@ Backlog 標準のガントチャートは 1 プロジェクト単位でしか表
 ### やらないこと
 
 - ガント上での編集（読み取り専用です。Backlog を更新する API は一切呼びません）
-- OAuth ログイン、複数スペースの横断
+- 複数スペースの横断（1 セッションにつき 1 スペース）
 - 課題間の依存矢印 — Backlog に先行 / 後続という順序依存の概念がないため、原理的に描けません
 
 ## 使い方
 
-1. Backlog の「個人設定 → API」で API キーを発行します
-2. アプリを開き、スペースドメイン（例: `example.backlog.jp`）と API キーを入力します
-3. プロジェクトを選ぶとガントチャートが表示されます
+1. アプリを開き、Backlog のスペースドメイン（例: `example.backlog.jp`）を入力します
+2. 「Backlog でログイン」を押すと Backlog の認可画面に移動するので、許可します
+3. アプリに戻ったらプロジェクトを選ぶとガントチャートが表示されます
 
-表示できる課題は、その API キーの持ち主が参加しているプロジェクトに限られます（Backlog 側の権限がそのまま効きます）。
+表示できる課題は、ログインしたユーザーが参加しているプロジェクトに限られます（Backlog 側の権限がそのまま効きます）。
 
-### API キーの取り扱い
+### 認証の仕組み
 
-API キーは**このブラウザの `localStorage` にのみ保存**され、サーバーには保存されません。リクエストのたびにヘッダーで送信し、Worker はそれを Backlog へ中継するだけです。
+Backlog の **OAuth 2.0** でログインします。
 
-`localStorage` は XSS が起きた場合に読み出されうる保存方式です。**共用の PC では使用しないでください。**
+- アクセストークンとリフレッシュトークンは **Cloudflare KV 上のセッションにのみ保存**され、ブラウザには渡りません
+- ブラウザが持つのは HttpOnly / Secure / SameSite=Lax な Cookie に入ったセッション ID だけです
+- アクセストークンは有効期限が近づくとサーバー側で自動的に更新されます
+- CSRF 対策として、認可リクエストの `state` を KV と Cookie の両方に持たせて突き合わせます
+
+### OAuth アプリの登録（セルフホストする場合）
+
+[Backlog Developer サイト](https://backlog.com/developer/applications/)でアプリを登録し、リダイレクト URI に次を設定します。
+
+```
+https://<worker のドメイン>/api/auth/callback
+```
+
+Backlog は 1 アプリにつき 1 つのリダイレクト URI しか登録できないため、ローカル開発でもログインを試したい場合は
+`http://localhost:5173/api/auth/callback` を設定した別アプリを登録してください。
+
+取得したクライアント ID とシークレットを設定します。
+
+```sh
+npx wrangler secret put BACKLOG_CLIENT_ID
+npx wrangler secret put BACKLOG_CLIENT_SECRET
+```
+
+ローカル開発では `.dev.vars.example` を `.dev.vars` にコピーして値を入れてください（`.dev.vars` は `.gitignore` 済みです）。
+
+セッション保存用の KV 名前空間も必要です。
+
+```sh
+npx wrangler kv namespace create SESSIONS
+# 出力された id を wrangler.jsonc の kv_namespaces に設定する
+```
 
 ## 開発
 
@@ -60,15 +90,23 @@ npm run dev        # http://localhost:5173
 
 ## 構成
 
+テストは実装ファイルと同じディレクトリに `*.test.ts(x)` として置いています。
+
 ```
 src/
   index.tsx              Hono のエントリ。SSR シェルと /api のマウント
   server/
     routes.ts            プロキシ API のルーティングと入力検証
     cache.ts             Cloudflare Cache API による短時間キャッシュ
+    test-utils.ts        テスト用のインメモリ KV など
+    auth/
+      config.ts          バインディングと OAuth 設定の解決
+      oauth.ts           Backlog OAuth 2.0（認可 URL・トークン交換・更新）
+      session.ts         セッションと state の KV 保存、Cookie の組み立て
+      routes.ts          /api/auth/login · /callback · /session · /logout
     backlog/
       space.ts           スペースドメインの検証（オープンプロキシ化の防止）
-      client.ts          Backlog API クライアント（リトライ・レート制限・キーの masking）
+      client.ts          Backlog API クライアント（リトライ・レート制限・トークンの masking）
       issues.ts          課題取得のオーケストレーション（クエリ組み立て・ページング・正規化）
       masters.ts         プロジェクト / 担当者 / ステータスの取得
       api-types.ts       Backlog API のレスポンス型
@@ -78,7 +116,6 @@ src/
     filter.ts            表示条件と URL クエリの相互変換
     types.ts             共有の型定義
   client/                React のクライアント
-tests/                   Vitest のテスト
 docs/design.md           設計ドキュメント
 ```
 
@@ -101,4 +138,9 @@ docs/design.md           設計ドキュメント
 
 ## 技術構成
 
-Hono + React 19 + Vite + Cloudflare Workers。ガントチャートは CSS Grid ではなく flex 行 + 絶対配置バーで自前実装しており、外部のガントライブラリには依存していません。
+Hono + React 19 + Vite + Cloudflare Workers（セッション保存に Workers KV）。ガントチャートは flex 行 + 絶対配置バーで自前実装しており、外部のガントライブラリには依存していません。
+
+lint は oxlint（type-aware ルールを有効化）、整形は oxfmt、テストは Vitest です。依存パッケージのバージョンはすべて完全固定し、Renovate で定期的に更新します。
+
+> `oxlint --type-aware` は型情報を使う lint ルールを実行するもので、型エラー自体は検出しません。
+> そのため型検査は `tsc --noEmit`（`npm run typecheck`）で別途行っています。

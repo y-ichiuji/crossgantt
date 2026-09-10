@@ -105,7 +105,7 @@ function makeFetchMock(handler: (url: URL) => unknown) {
 describe('fetchGanttIssues', () => {
   it('プロジェクト未選択なら Backlog を呼ばない', async () => {
     const fetchImpl = makeFetchMock(() => ({}))
-    const client = new BacklogClient({ space: SPACE, apiKey: 'key', fetchImpl })
+    const client = new BacklogClient({ space: SPACE, accessToken: 'key', fetchImpl })
     const result = await fetchGanttIssues(
       client,
       {},
@@ -137,7 +137,7 @@ describe('fetchGanttIssues', () => {
       }
       return [makeRawIssue({ id: 1, issueKey: 'PJA-1' })]
     })
-    const client = new BacklogClient({ space: SPACE, apiKey: 'key', fetchImpl })
+    const client = new BacklogClient({ space: SPACE, accessToken: 'key', fetchImpl })
 
     const result = await fetchGanttIssues(
       client,
@@ -161,7 +161,7 @@ describe('fetchGanttIssues', () => {
 
   it('件数が 0 のクエリではページ取得をしない', async () => {
     const fetchImpl = makeFetchMock((url) => (url.pathname.endsWith('/issues/count') ? { count: 0 } : []))
-    const client = new BacklogClient({ space: SPACE, apiKey: 'key', fetchImpl })
+    const client = new BacklogClient({ space: SPACE, accessToken: 'key', fetchImpl })
 
     await fetchGanttIssues(
       client,
@@ -195,7 +195,7 @@ describe('fetchGanttIssues', () => {
       // 日付条件なしのクエリには日付ありの課題も混ざって返る。
       return [makeRawIssue({ id: 1 }), makeRawIssue({ id: 99, issueKey: 'PJA-99', startDate: null, dueDate: null })]
     })
-    const client = new BacklogClient({ space: SPACE, apiKey: 'key', fetchImpl })
+    const client = new BacklogClient({ space: SPACE, accessToken: 'key', fetchImpl })
 
     const result = await fetchGanttIssues(
       client,
@@ -223,7 +223,7 @@ describe('fetchGanttIssues', () => {
       const offset = Number(url.searchParams.get('offset') ?? 0)
       return [makeRawIssue({ id: offset + 1, issueKey: `PJA-${offset + 1}` })]
     })
-    const client = new BacklogClient({ space: SPACE, apiKey: 'key', fetchImpl })
+    const client = new BacklogClient({ space: SPACE, accessToken: 'key', fetchImpl })
 
     const result = await fetchGanttIssues(
       client,
