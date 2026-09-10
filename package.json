@@ -22,7 +22,7 @@
     "verify": "$npm_execpath run format:check && $npm_execpath run lint && $npm_execpath run typecheck && $npm_execpath run test"
   },
   "dependencies": {
-    "hono": "4.12.33",
+    "hono": "4.13.5",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
