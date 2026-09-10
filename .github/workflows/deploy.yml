@@ -50,6 +50,20 @@ jobs:
       - run: npm ci
       - run: npm run build
 
+      # wrangler の汎用エラーより先に、何が足りないかを明示する。
+      - name: シークレットの確認
+        env:
+          API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          missing=''
+          [ -n "$API_TOKEN" ] || missing="$missing CLOUDFLARE_API_TOKEN"
+          [ -n "$ACCOUNT_ID" ] || missing="$missing CLOUDFLARE_ACCOUNT_ID"
+          if [ -n "$missing" ]; then
+            echo "::error::リポジトリシークレットが未設定です:$missing（設定方法は README の CI / CD を参照）"
+            exit 1
+          fi
+
       - name: デプロイ
         uses: cloudflare/wrangler-action@v3
         with:
