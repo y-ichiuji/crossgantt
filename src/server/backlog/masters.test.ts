@@ -58,8 +58,16 @@ describe('resolveStatusIds', () => {
     expect(resolveStatusIds(groups, ['未対応'], false)).toEqual([1, 9])
   })
 
-  it('完了を選んでも完了を含めない設定なら空になる', () => {
-    expect(resolveStatusIds(groups, ['完了'], false)).toEqual([])
+  it('名前で明示的に選ばれた完了ステータスは、完了を含めない設定でも残す', () => {
+    // 「完了を含む」は明示的な選択が無いときの既定を決めるもの。
+    // ここで選択を打ち消すと ID が空になり、呼び出し元が 0 件を返して
+    // 「条件に合う課題が無い」と区別できなくなる。
+    expect(resolveStatusIds(groups, ['完了'], false)).toEqual([4])
+  })
+
+  it('選択が無いときは完了を含めない設定に従って完了を除く', () => {
+    expect(resolveStatusIds(groups, [], false)).not.toContain(4)
+    expect(resolveStatusIds(groups, [], true)).toContain(4)
   })
 
   it('存在しない名前は無視する', () => {

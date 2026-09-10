@@ -57,15 +57,6 @@ export type BacklogRateLimitEntry = {
   reset: number
 }
 
-export type BacklogRateLimitResponse = {
-  rateLimit: {
-    read: BacklogRateLimitEntry
-    update: BacklogRateLimitEntry
-    search: BacklogRateLimitEntry
-    icon: BacklogRateLimitEntry
-  }
-}
-
 export type BacklogCountResponse = {
   count: number
 }

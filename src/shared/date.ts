@@ -14,7 +14,20 @@ const JST_OFFSET_MS = 9 * 60 * 60 * 1000
 
 const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 
-/** `yyyy-MM-dd` 形式かどうかを判定する。 */
+/**
+ * 取り扱う DateKey の下限と上限。
+ *
+ * 上限を 9999 年のままにすると、`endOfMonth('9999-12-31')` が内部で
+ * `addMonths` を通して `10000-01-01` を作る。5 桁の年は拡張形式
+ * （`+010000-01-01`）でないと `Date.parse` が解釈できず NaN になり、
+ * `toDateKey` の `toISOString()` が RangeError を投げてしまう。
+ * 業務上ありえない範囲は境界で弾き、内部の日付計算が必ず有効な値だけを
+ * 受け取れるようにする。
+ */
+export const MIN_DATE_KEY = '1970-01-01'
+export const MAX_DATE_KEY = '2999-12-31'
+
+/** `yyyy-MM-dd` 形式で、かつ取り扱い範囲に収まっているかを判定する。 */
 export function isDateKey(value: string): boolean {
   if (!DATE_KEY_PATTERN.test(value)) {
     return false
@@ -24,7 +37,10 @@ export function isDateKey(value: string): boolean {
     return false
   }
   // 2026-02-31 のような存在しない日付を弾く。
-  return toDateKey(time) === value
+  if (toDateKey(time) !== value) {
+    return false
+  }
+  return value >= MIN_DATE_KEY && value <= MAX_DATE_KEY
 }
 
 /** epoch ミリ秒を UTC 基準で `yyyy-MM-dd` に変換する。 */

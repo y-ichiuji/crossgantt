@@ -91,13 +91,6 @@ export type IssuesQuery = Pick<
   'projectIds' | 'assigneeIds' | 'statusNames' | 'from' | 'to' | 'keyword' | 'includeClosed' | 'includeNoDate'
 >
 
-/** Backlog のレート制限残量。 */
-export type RateLimitStatus = {
-  limit: number
-  remaining: number
-  reset: number
-}
-
 /** /api/issues のレスポンス。 */
 export type IssuesResponse = {
   issues: GanttIssue[]

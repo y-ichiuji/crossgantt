@@ -10,6 +10,8 @@ import {
   formatShort,
   isDateKey,
   isWeekend,
+  MAX_DATE_KEY,
+  MIN_DATE_KEY,
   overlaps,
   parseBacklogDate,
   startOfMonth,
@@ -29,6 +31,23 @@ describe('isDateKey', () => {
     expect(isDateKey('2026/09/10')).toBe(false)
     expect(isDateKey('20260910')).toBe(false)
     expect(isDateKey('')).toBe(false)
+  })
+
+  it('取り扱い範囲の外は拒否する', () => {
+    expect(isDateKey(MIN_DATE_KEY)).toBe(true)
+    expect(isDateKey(MAX_DATE_KEY)).toBe(true)
+    expect(isDateKey('1969-12-31')).toBe(false)
+    expect(isDateKey('3000-01-01')).toBe(false)
+    // 9999 年を通すと endOfMonth が 10000-01-01 を作り、Date.parse が NaN を返して
+    // toDateKey の toISOString が RangeError を投げる。境界で弾いておく。
+    expect(isDateKey('9999-12-31')).toBe(false)
+  })
+})
+
+describe('月末の計算', () => {
+  it('取り扱い範囲の上限でも例外にならない', () => {
+    expect(() => endOfMonth(MAX_DATE_KEY)).not.toThrow()
+    expect(endOfMonth(MAX_DATE_KEY)).toBe('2999-12-31')
   })
 })
 
