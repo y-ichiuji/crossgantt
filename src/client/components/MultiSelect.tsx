@@ -30,6 +30,7 @@ export function MultiSelect({ label, options, selected, onChange, emptyLabel, di
   const listId = useId()
   const labelId = useId()
   const summaryId = useId()
+  const hintId = useId()
 
   useEffect(() => {
     if (!open) {
@@ -83,6 +84,17 @@ export function MultiSelect({ label, options, selected, onChange, emptyLabel, di
     onChange([...known, ...unknown])
   }
 
+  /** Enter を押したときに選ばれる候補。絞り込み結果の先頭。 */
+  const firstVisible = visibleOptions.at(0)
+
+  const selectFirstVisible = () => {
+    // トグルではなく「選択する」なので、すでに選んでいるなら何もしない。
+    if (!firstVisible || selectedSet.has(firstVisible.value)) {
+      return
+    }
+    toggle(firstVisible.value)
+  }
+
   const summary = selected.length === 0 ? emptyLabel : `${selected.length}件選択`
 
   return (
@@ -117,6 +129,17 @@ export function MultiSelect({ label, options, selected, onChange, emptyLabel, di
               placeholder="絞り込み"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
+              // 絞り込んでから Enter で決定できるようにする。トグルではなく
+              // 「選択する」なので、続けて押しても外れない。
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter') {
+                  return
+                }
+                event.preventDefault()
+                selectFirstVisible()
+              }}
+              // 先頭の候補が Enter の対象であることを支援技術にも伝える。
+              aria-describedby={firstVisible ? hintId : undefined}
             />
           ) : null}
 
@@ -154,6 +177,12 @@ export function MultiSelect({ label, options, selected, onChange, emptyLabel, di
             ))}
             {visibleOptions.length === 0 ? <li className={styles.empty}>該当なし</li> : null}
           </ul>
+
+          {searchable && firstVisible ? (
+            <p className={styles.hint} id={hintId}>
+              Enter で「{firstVisible.label}」を選択
+            </p>
+          ) : null}
         </div>
       ) : null}
     </div>

@@ -114,6 +114,46 @@ describe('MultiSelect', () => {
     expect(onChange).toHaveBeenCalledWith(['3'])
   })
 
+  it('絞り込んで Enter を押すと先頭の選択肢が選ばれる', async () => {
+    const { onChange, user } = setup({ searchable: true })
+    await user.click(screen.getByRole('button', { name: /未選択/u }))
+    await user.type(screen.getByPlaceholderText('絞り込み'), 'プロジェクト')
+    // 「プロジェクトA」「プロジェクトB」が残り、先頭は A。
+    await user.keyboard('{Enter}')
+    expect(onChange).toHaveBeenCalledWith(['1'])
+  })
+
+  it('Enter の対象がどれかを画面に出す', async () => {
+    const { user } = setup({ searchable: true })
+    await user.click(screen.getByRole('button', { name: /未選択/u }))
+    await user.type(screen.getByPlaceholderText('絞り込み'), 'その他')
+    expect(screen.getByText('Enter で「その他」を選択')).toBeDefined()
+  })
+
+  it('該当なしのときに Enter を押しても何も起きない', async () => {
+    const { onChange, user } = setup({ searchable: true })
+    await user.click(screen.getByRole('button', { name: /未選択/u }))
+    await user.type(screen.getByPlaceholderText('絞り込み'), 'zzz')
+    await user.keyboard('{Enter}')
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('Enter は選択を外さない（トグルではない）', async () => {
+    const { onChange, user } = setup({ searchable: true, selected: ['1'] })
+    await user.click(screen.getByRole('button', { name: /1件選択/u }))
+    await user.type(screen.getByPlaceholderText('絞り込み'), 'プロジェクトA')
+    await user.keyboard('{Enter}')
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('絞り込んでいなければ Enter は一覧の先頭を選ぶ', async () => {
+    const { onChange, user } = setup({ searchable: true })
+    await user.click(screen.getByRole('button', { name: /未選択/u }))
+    await user.click(screen.getByPlaceholderText('絞り込み'))
+    await user.keyboard('{Enter}')
+    expect(onChange).toHaveBeenCalledWith(['1'])
+  })
+
   it('Escape で閉じる', async () => {
     const { user } = setup()
     await user.click(screen.getByRole('button', { name: /未選択/u }))
