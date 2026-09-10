@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { hashKey, withJsonCache } from './cache'
+import { hashKey, matchCachedResponse, putCachedResponse, withJsonCache } from './cache'
 
 type CacheEntry = { response: Response }
 
@@ -25,6 +25,40 @@ function installMemoryCache() {
 
 afterEach(() => {
   vi.restoreAllMocks()
+})
+
+describe('putCachedResponse / matchCachedResponse', () => {
+  it('利用者向けの Cache-Control をヒット時にも保つ', async () => {
+    const memory = installMemoryCache()
+    try {
+      // アイコンはセッションに紐づくため共有キャッシュへ載せてはいけない。
+      // 保存時に内部 TTL で上書きしてしまうと、ヒット時にこの指示が消える。
+      const original = new Response('image-bytes', {
+        headers: { 'Content-Type': 'image/png', 'Cache-Control': 'private, max-age=3600' }
+      })
+      await putCachedResponse('icon-key', original, 3600)
+
+      const hit = await matchCachedResponse('icon-key')
+      expect(hit).not.toBeNull()
+      expect(hit?.headers.get('Cache-Control')).toBe('private, max-age=3600')
+      expect(hit?.headers.get('Content-Type')).toBe('image/png')
+      // 退避用のヘッダーは外へ出さない。
+      expect(hit?.headers.get('x-cg-client-cache-control')).toBeNull()
+    } finally {
+      memory.restore()
+    }
+  })
+
+  it('Cache-Control が無いレスポンスはそのまま返す', async () => {
+    const memory = installMemoryCache()
+    try {
+      await putCachedResponse('plain', new Response('x', { headers: { 'Content-Type': 'text/plain' } }), 60)
+      const hit = await matchCachedResponse('plain')
+      expect(await hit?.text()).toBe('x')
+    } finally {
+      memory.restore()
+    }
+  })
 })
 
 describe('hashKey', () => {

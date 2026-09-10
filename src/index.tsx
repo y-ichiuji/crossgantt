@@ -13,6 +13,19 @@ const app = new Hono<{ Bindings: AppBindings }>()
 app.route('/api/auth', auth)
 app.route('/api', api)
 
+// 想定外の例外はここで受け止める。`api` 側の onError はそのサブアプリにしか効かず、
+// 認可コールバックや SSR で投げられた例外は Hono 既定のプレーンテキスト 500 になる。
+// クライアントの `request()` は本文を JSON として読むため、そのままでは
+// 「リクエストに失敗しました (500)」としか分からない。
+app.onError((err, c) => {
+  console.error('unhandled error', err)
+  return c.json({ error: '予期しないエラーが発生しました' }, 500)
+})
+
+// 未定義の API パスは HTML ではなく 404 の JSON を返す。SPA のフォールバックに
+// 落ちると、クライアントは 200 の HTML を JSON として解釈しようとして失敗する。
+app.all('/api/*', (c) => c.json({ error: '存在しない API です' }, 404))
+
 app.get('*', async (c) => {
   c.header('Content-Type', 'text/html; charset=utf-8')
   return c.body(

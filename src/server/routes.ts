@@ -10,8 +10,9 @@
 
 import { Hono } from 'hono'
 
-import { isDateKey } from '../shared/date'
-import type { ApiErrorBody, IssuesResponse } from '../shared/types'
+import { diffDays, isDateKey } from '../shared/date'
+import { MAX_RANGE_DAYS, parseBool, parseIdList, parseNameList } from '../shared/filter'
+import type { ApiErrorBody, IssuesResponse, ProjectSummary, StatusGroup } from '../shared/types'
 import { type AppBindings, resolveOAuthConfig } from './auth/config'
 import { needsRefresh, OAuthError, refreshTokens } from './auth/oauth'
 import { getSession, putSession, readCookie, SESSION_COOKIE } from './auth/session'
@@ -72,9 +73,19 @@ api.use('*', async (c, next) => {
       })
     } catch (error: unknown) {
       if (error instanceof OAuthError) {
-        return c.json<ApiErrorBody>({ error: '認証の更新に失敗しました。ログインし直してください' }, 401)
+        // 画面表示では複数の API を同時に呼ぶため、同じリフレッシュトークンで
+        // 並行して更新を試みることがある。Backlog はリフレッシュトークンを
+        // ローテーションするので、先着以外はここで必ず失敗する。
+        // 失敗を即ログアウト扱いにすると正常なセッションが切れてしまうため、
+        // 他のリクエストが更新を終えていないか保存済みの内容を読み直す。
+        const latest = await getSession(c.env.SESSIONS, sessionId)
+        if (!latest || needsRefresh(latest.expiresAt, Date.now())) {
+          return c.json<ApiErrorBody>({ error: '認証の更新に失敗しました。ログインし直してください' }, 401)
+        }
+        accessToken = latest.accessToken
+      } else {
+        throw error
       }
-      throw error
     }
   }
 
@@ -93,54 +104,62 @@ api.onError((err, c) => {
   return c.json<ApiErrorBody>({ error: '予期しないエラーが発生しました' }, 500)
 })
 
-/** カンマ区切りの ID リストを解釈する。 */
-function parseIds(value: string | undefined): number[] {
-  if (!value) {
+/** 参加中のプロジェクト一覧をキャッシュ経由で取得する。 */
+function cachedProjects(scopeHash: string, client: BacklogClient, bypass: boolean): Promise<ProjectSummary[]> {
+  return withJsonCache('projects', [scopeHash], MASTER_TTL, bypass, () => fetchProjects(client))
+}
+
+/** ステータス一覧をキャッシュ経由で取得する。キーの定義を 1 か所に保つため関数にしている。 */
+function cachedStatusGroups(
+  scopeHash: string,
+  client: BacklogClient,
+  projectIds: number[],
+  bypass: boolean
+): Promise<StatusGroup[]> {
+  return withJsonCache('statuses', [scopeHash, projectIds.join(',')], MASTER_TTL, bypass, () =>
+    fetchStatusGroups(client, projectIds)
+  )
+}
+
+/**
+ * 要求されたプロジェクト ID を、実際に参加しているものだけに絞る。
+ *
+ * ID は URL 由来なので、共有リンクに含まれる他人のプロジェクト、別スペースの ID、
+ * 退会済み・削除済みのプロジェクトが混ざりうる。そのまま Backlog へ投げると
+ * プロジェクトごとの取得（`mapWithConcurrency` の `Promise.all`）が 1 件の 404 で
+ * 総崩れになり、参照できるプロジェクトの結果まで失われる。
+ * ここで絞ることで 1 リクエストあたりのサブリクエスト数も参加数以下に収まる。
+ */
+async function accessibleProjects(
+  scopeHash: string,
+  client: BacklogClient,
+  requested: number[],
+  bypass: boolean
+): Promise<ProjectSummary[]> {
+  if (requested.length === 0) {
     return []
   }
-  const ids = value
-    .split(',')
-    .map((part) => Number.parseInt(part.trim(), 10))
-    .filter((id) => Number.isSafeInteger(id) && id > 0)
-  return [...new Set(ids)].toSorted((a, b) => a - b)
-}
-
-/** カンマ区切りの名前リストを解釈する。 */
-function parseNames(value: string | undefined): string[] {
-  if (!value) {
-    return []
-  }
-  return [
-    ...new Set(
-      value
-        .split(',')
-        .map((part) => part.trim())
-        .filter((part) => part.length > 0)
-    )
-  ]
-}
-
-function parseBool(value: string | undefined): boolean {
-  return value === '1' || value === 'true'
-}
-
-function shouldBypassCache(value: string | undefined): boolean {
-  return parseBool(value)
+  const projects = await cachedProjects(scopeHash, client, bypass)
+  const requestedIds = new Set(requested)
+  return projects.filter((project) => requestedIds.has(project.id))
 }
 
 /** 参加中のプロジェクト一覧。 */
 api.get('/projects', async (c) => {
-  const bypass = shouldBypassCache(c.req.query('refresh'))
-  const projects = await withJsonCache('projects', [c.var.scopeHash], MASTER_TTL, bypass, () =>
-    fetchProjects(c.var.client)
-  )
-  return c.json(projects)
+  const bypass = parseBool(c.req.query('refresh'), false)
+  return c.json(await cachedProjects(c.var.scopeHash, c.var.client, bypass))
 })
 
 /** 指定プロジェクト群の担当者候補。 */
 api.get('/members', async (c) => {
-  const projectIds = parseIds(c.req.query('projectIds'))
-  const bypass = shouldBypassCache(c.req.query('refresh'))
+  const bypass = parseBool(c.req.query('refresh'), false)
+  const projects = await accessibleProjects(
+    c.var.scopeHash,
+    c.var.client,
+    parseIdList(c.req.query('projectIds')),
+    bypass
+  )
+  const projectIds = projects.map((project) => project.id)
   const members = await withJsonCache('members', [c.var.scopeHash, projectIds.join(',')], MASTER_TTL, bypass, () =>
     fetchMembers(c.var.client, projectIds)
   )
@@ -149,27 +168,35 @@ api.get('/members', async (c) => {
 
 /** 指定プロジェクト群のステータス（名前で統合済み）。 */
 api.get('/statuses', async (c) => {
-  const projectIds = parseIds(c.req.query('projectIds'))
-  const bypass = shouldBypassCache(c.req.query('refresh'))
-  const statuses = await withJsonCache('statuses', [c.var.scopeHash, projectIds.join(',')], MASTER_TTL, bypass, () =>
-    fetchStatusGroups(c.var.client, projectIds)
+  const bypass = parseBool(c.req.query('refresh'), false)
+  const projects = await accessibleProjects(
+    c.var.scopeHash,
+    c.var.client,
+    parseIdList(c.req.query('projectIds')),
+    bypass
+  )
+  const statuses = await cachedStatusGroups(
+    c.var.scopeHash,
+    c.var.client,
+    projects.map((project) => project.id),
+    bypass
   )
   return c.json(statuses)
 })
 
 /** 課題の取得。ページングとクエリのマージはここで完結させる。 */
 api.get('/issues', async (c) => {
-  const projectIds = parseIds(c.req.query('projectIds'))
-  const assigneeIds = parseIds(c.req.query('assigneeIds'))
-  const statusNames = parseNames(c.req.query('statuses'))
+  const requestedProjectIds = parseIdList(c.req.query('projectIds'))
+  const assigneeIds = parseIdList(c.req.query('assigneeIds'))
+  const statusNames = parseNameList(c.req.query('statuses'))
   const keyword = c.req.query('keyword')?.trim() ?? ''
-  const includeClosed = parseBool(c.req.query('closed'))
-  const includeNoDate = parseBool(c.req.query('nodate'))
+  const includeClosed = parseBool(c.req.query('closed'), false)
+  const includeNoDate = parseBool(c.req.query('nodate'), false)
   const from = c.req.query('from') ?? ''
   const to = c.req.query('to') ?? ''
-  const bypass = shouldBypassCache(c.req.query('refresh'))
+  const bypass = parseBool(c.req.query('refresh'), false)
 
-  if (projectIds.length === 0) {
+  if (requestedProjectIds.length === 0) {
     return c.json<ApiErrorBody>({ error: 'プロジェクトを 1 つ以上選択してください' }, 400)
   }
   if (!isDateKey(from) || !isDateKey(to)) {
@@ -178,6 +205,16 @@ api.get('/issues', async (c) => {
   if (from > to) {
     return c.json<ApiErrorBody>({ error: '表示期間の開始日が終了日より後になっています' }, 400)
   }
+  // 期間に上限が無いと、1 本の URL で数百万日分の描画とページングを要求できてしまう。
+  if (diffDays(from, to) + 1 > MAX_RANGE_DAYS) {
+    return c.json<ApiErrorBody>({ error: `表示期間が長すぎます（最大 ${MAX_RANGE_DAYS} 日）` }, 400)
+  }
+
+  const projects = await accessibleProjects(c.var.scopeHash, c.var.client, requestedProjectIds, bypass)
+  if (projects.length === 0) {
+    return c.json<ApiErrorBody>({ error: '選択されたプロジェクトを参照できません' }, 403)
+  }
+  const projectIds = projects.map((project) => project.id)
 
   const cacheKeyParts = [
     c.var.scopeHash,
@@ -198,20 +235,25 @@ api.get('/issues', async (c) => {
     // ステータス一覧の取得そのものを省いてリクエスト数を減らす。
     let statusIds: number[] = []
     if (!includeClosed || statusNames.length > 0) {
-      const groups = await withJsonCache('statuses', [c.var.scopeHash, projectIds.join(',')], MASTER_TTL, bypass, () =>
-        fetchStatusGroups(client, projectIds)
-      )
+      const groups = await cachedStatusGroups(c.var.scopeHash, client, projectIds, bypass)
       statusIds = resolveStatusIds(groups, statusNames, includeClosed)
       if (statusIds.length === 0) {
         return { issues: [], truncated: false, requestCount: client.requestCount, fetchedAt: new Date().toISOString() }
       }
     }
 
-    const result = await fetchGanttIssues(
-      client,
-      {},
-      { projectIds, assigneeIds, statusIds, from, to, keyword, includeNoDate }
-    )
+    // プロジェクトキーは取得済みの一覧から渡す。渡さないと課題キーの
+    // 文字列加工に頼ることになり、キーの命名規則が変わると静かに壊れる。
+    const projectKeys = Object.fromEntries(projects.map((project) => [project.id, project.projectKey]))
+    const result = await fetchGanttIssues(client, projectKeys, {
+      projectIds,
+      assigneeIds,
+      statusIds,
+      from,
+      to,
+      keyword,
+      includeNoDate
+    })
 
     return {
       issues: result.issues,
