@@ -30,6 +30,17 @@
 
 .background {
   z-index: 0;
+  /*
+   * 日付（または週）ごとの薄い罫線。
+   * 要素を日数分並べるとノードが増えるため、繰り返しグラデーションで描く。
+   */
+  background-image: repeating-linear-gradient(
+    to right,
+    var(--grid-line) 0,
+    var(--grid-line) 1px,
+    transparent 1px,
+    transparent var(--grid-step)
+  );
 }
 
 /* 今日線はバーより手前に置きたいので、背景とは別のレイヤーにする。 */

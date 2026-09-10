@@ -21,9 +21,6 @@ import { loadLastSpace, saveLastSpace } from './storage'
 
 import styles from './App.module.css'
 
-/** 初回表示時に自動選択するプロジェクト数の上限。多すぎると初回取得が重くなるため。 */
-const AUTO_SELECT_LIMIT = 5
-
 /** キーワード入力を取得リクエストへ反映するまでの待ち時間。 */
 const KEYWORD_DEBOUNCE_MS = 400
 
@@ -212,13 +209,13 @@ export default function App() {
     return () => controller.abort()
   }, [viewer, reportError])
 
-  // プロジェクト未選択のまま開かれた場合は、先頭のいくつかを自動選択する。
+  // プロジェクト未選択のまま開かれた場合は、参加しているすべてのプロジェクトを選ぶ。
   useEffect(() => {
     if (autoSelectedRef.current || projects.length === 0 || filter.projectIds.length > 0) {
       return
     }
     autoSelectedRef.current = true
-    patchFilter({ projectIds: projects.slice(0, AUTO_SELECT_LIMIT).map((project) => project.id) })
+    patchFilter({ projectIds: projects.map((project) => project.id) })
   }, [projects, filter.projectIds.length, patchFilter])
 
   // 依存配列をプリミティブだけで表現するため、配列はカンマ区切りのキーに畳む。
@@ -388,9 +385,6 @@ export default function App() {
     <div className={styles.app}>
       <header className={styles.header}>
         <div className={styles.brand}>
-          <span className={styles.logo} aria-hidden="true">
-            ▤
-          </span>
           <div>
             <h1 className={styles.title}>CrossGantt for Backlog</h1>
             <p className={styles.space}>

@@ -11,11 +11,14 @@ import {
   minorTicks,
   monthTicks,
   projectColor,
+  readableTextColor,
   resolveBar,
+  statusColor,
   weekendBands,
   xOf
 } from '../../shared/gantt'
 import type { GanttIssue, ViewFilter } from '../../shared/types'
+import { AssigneeAvatar } from './AssigneeAvatar'
 import { IssueTooltip, type TooltipState } from './IssueTooltip'
 
 import styles from './GanttChart.module.css'
@@ -84,8 +87,15 @@ export function GanttChart({ issues, filter, today, projectNames }: Props) {
     <>
       <div
         className={styles.scroller}
+        data-testid="gantt-scroller"
         ref={scrollRef}
-        style={{ '--timeline-width': `${scale.width}px` } as React.CSSProperties}
+        style={
+          {
+            '--timeline-width': `${scale.width}px`,
+            // 日ズームでは 1 日ごと、それ以外は 1 週ごとに薄い罫線を引く。
+            '--grid-step': `${filter.zoom === 'day' ? scale.pxPerDay : scale.pxPerDay * 7}px`
+          } as React.CSSProperties
+        }
       >
         <div className={styles.inner}>
           <div className={styles.background} aria-hidden="true">
@@ -137,6 +147,9 @@ export function GanttChart({ issues, filter, today, projectNames }: Props) {
                   <div className={styles.rowHead}>
                     <button type="button" className={styles.groupToggle} onClick={() => toggleGroup(group.key)}>
                       <span aria-hidden="true">{isCollapsed ? '▶' : '▼'}</span>
+                      {filter.groupBy === 'assignee' ? (
+                        <AssigneeAvatar assigneeId={group.assigneeId} assigneeName={group.label} size="md" />
+                      ) : null}
                       <span className={styles.groupName}>{group.label}</span>
                       <span className={styles.groupCount}>{group.issues.length}件</span>
                       {group.overdueCount > 0 ? (
@@ -156,7 +169,9 @@ export function GanttChart({ issues, filter, today, projectNames }: Props) {
                       }
                       const geometry = barGeometry(bar, scale)
                       const overdue = isOverdue(issue, today)
-                      const color = projectColor(issue.projectId)
+                      // Backlog のガントチャートと同じく、バーの色はステータスで決める。
+                      const background = statusColor(issue)
+                      const foreground = readableTextColor(background)
 
                       const label = `${issue.issueKey} ${issue.summary}`
                       const period =
@@ -173,9 +188,10 @@ export function GanttChart({ issues, filter, today, projectNames }: Props) {
                           <div className={styles.rowHead}>
                             <span
                               className={styles.projectChip}
-                              style={{ backgroundColor: color }}
-                              aria-hidden="true"
+                              style={{ backgroundColor: projectColor(issue.projectId) }}
+                              title={issue.projectKey}
                             />
+                            <AssigneeAvatar assigneeId={issue.assigneeId} assigneeName={issue.assigneeName} />
                             <a
                               className={styles.issueLink}
                               href={issue.url}
@@ -196,7 +212,12 @@ export function GanttChart({ issues, filter, today, projectNames }: Props) {
                               data-closed={issue.isClosed}
                               data-clip-start={geometry.clippedStart}
                               data-clip-end={geometry.clippedEnd}
-                              style={{ left: geometry.left, width: geometry.width, backgroundColor: color }}
+                              style={{
+                                left: geometry.left,
+                                width: geometry.width,
+                                backgroundColor: background,
+                                color: foreground
+                              }}
                               href={issue.url}
                               target="_blank"
                               rel="noreferrer"
@@ -244,6 +265,7 @@ function NoDateSection({ issues, projectNames }: { issues: GanttIssue[]; project
           {issues.map((issue) => (
             <li key={issue.id}>
               <span className={styles.projectChip} style={{ backgroundColor: projectColor(issue.projectId) }} />
+              <AssigneeAvatar assigneeId={issue.assigneeId} assigneeName={issue.assigneeName} />
               <a href={issue.url} target="_blank" rel="noreferrer">
                 <span className={styles.issueKey}>{issue.issueKey}</span> {issue.summary}
               </a>

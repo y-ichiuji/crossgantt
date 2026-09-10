@@ -86,6 +86,8 @@ export type GanttGroup = {
   label: string
   issues: GanttIssue[]
   overdueCount: number
+  /** 担当者別のときだけ入る。見出しにアイコンを出すために使う。 */
+  assigneeId: number | null
 }
 
 const UNASSIGNED_KEY = '__unassigned__'
@@ -130,10 +132,10 @@ export function groupIssues(
 ): GanttGroup[] {
   const buckets = new Map<string, GanttGroup>()
 
-  const push = (key: string, label: string, issue: GanttIssue) => {
+  const push = (key: string, label: string, issue: GanttIssue, assigneeId: number | null = null) => {
     let group = buckets.get(key)
     if (!group) {
-      group = { key, label, issues: [], overdueCount: 0 }
+      group = { key, label, issues: [], overdueCount: 0, assigneeId }
       buckets.set(key, group)
     }
     group.issues.push(issue)
@@ -145,7 +147,7 @@ export function groupIssues(
   for (const issue of issues) {
     if (groupBy === 'assignee') {
       const key = issue.assigneeId === null ? UNASSIGNED_KEY : `u${issue.assigneeId}`
-      push(key, issue.assigneeName ?? '未割り当て', issue)
+      push(key, issue.assigneeName ?? '未割り当て', issue, issue.assigneeId)
     } else if (groupBy === 'project') {
       const label = projectNames[issue.projectId] ?? issue.projectKey
       push(`p${issue.projectId}`, label, issue)
@@ -348,4 +350,56 @@ export const PROJECT_COLORS = [
 export function projectColor(projectId: number): string {
   const hashed = Math.imul(projectId | 0, 2654435761) >>> 0
   return PROJECT_COLORS[hashed % PROJECT_COLORS.length]
+}
+
+/** Backlog がステータスに色を持たない場合のフォールバック。 */
+export const FALLBACK_STATUS_COLOR = '#94a3b8'
+
+/** バーの背景色。Backlog のガントチャートと同じくステータスの色を使う。 */
+export function statusColor(issue: GanttIssue): string {
+  return issue.statusColor ?? FALLBACK_STATUS_COLOR
+}
+
+const HEX_COLOR = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i
+
+/** `#rgb` / `#rrggbb` を 0〜255 の RGB に分解する。解釈できなければ null。 */
+function parseHexColor(color: string): [number, number, number] | null {
+  if (!HEX_COLOR.test(color)) {
+    return null
+  }
+  const hex = color.slice(1)
+  // `#abc` を `#aabbcc` に展開する。16 進数字だけなので 1 文字ずつで問題ない。
+  const full = hex.length === 3 ? hex.replace(/./g, (char) => char + char) : hex
+  return [
+    Number.parseInt(full.slice(0, 2), 16),
+    Number.parseInt(full.slice(2, 4), 16),
+    Number.parseInt(full.slice(4, 6), 16)
+  ]
+}
+
+/** sRGB の 1 チャンネルを相対輝度の計算用に線形化する。 */
+function toLinear(channel: number): number {
+  const value = channel / 255
+  return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+}
+
+/** WCAG の相対輝度。0（黒）〜 1（白）。 */
+export function relativeLuminance(color: string): number {
+  const rgb = parseHexColor(color)
+  if (!rgb) {
+    // 解釈できない色は暗いものとみなし、白文字を選ばせる。
+    return 0
+  }
+  const [red, green, blue] = rgb
+  return 0.2126 * toLinear(red) + 0.7152 * toLinear(green) + 0.0722 * toLinear(blue)
+}
+
+/**
+ * 指定した背景色の上で読みやすい文字色を返す。
+ *
+ * Backlog のステータス色は明るいもの（例: 完了の #b0be3c）と
+ * 暗いものが混在するため、固定の白文字だと読めなくなる。
+ */
+export function readableTextColor(background: string): string {
+  return relativeLuminance(background) > 0.45 ? '#1c2430' : '#ffffff'
 }
