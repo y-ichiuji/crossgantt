@@ -6,11 +6,7 @@ const SPACE = 'example.backlog.jp'
 const API_KEY = 'super-secret-token'
 
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
-  return new Response(JSON.stringify(body), {
-    status: 200,
-    headers: { 'Content-Type': 'application/json' },
-    ...init
-  })
+  return Response.json(body, { status: 200, ...init })
 }
 
 describe('BacklogClient.get', () => {
@@ -70,7 +66,7 @@ describe('BacklogClient.get', () => {
 
     await client.get('/issues')
 
-    expect(client.lastRateLimit).toEqual({ limit: 150, remaining: 149, reset: 1780000000 })
+    expect(client.lastRateLimit).toEqual({ limit: 150, remaining: 149, reset: 1_780_000_000 })
   })
 
   it('429 を受けたら待ってリトライする', async () => {
@@ -127,9 +123,9 @@ describe('BacklogClient.get', () => {
     ) as unknown as typeof fetch
     const client = new BacklogClient({ space: SPACE, accessToken: API_KEY, fetchImpl })
 
-    const error = (await client.get('/issues').catch((caught: unknown) => caught)) as BacklogApiError
-    expect(error.detail).toBe('invalid token=***')
-    expect(error.detail).not.toContain(API_KEY)
+    const thrown = (await client.get('/issues').catch((error: unknown) => error)) as BacklogApiError
+    expect(thrown.detail).toBe('invalid token=***')
+    expect(thrown.detail).not.toContain(API_KEY)
   })
 
   it('既定の fetch は globalThis に束縛して呼ぶ', async () => {
@@ -179,7 +175,9 @@ describe('mapWithConcurrency', () => {
       async () => {
         active += 1
         peak = Math.max(peak, active)
-        await new Promise((resolve) => setTimeout(resolve, 1))
+        await new Promise((resolve) => {
+          setTimeout(resolve, 1)
+        })
         active -= 1
       }
     )

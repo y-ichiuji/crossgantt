@@ -12,7 +12,7 @@ export const DAY_MS = 24 * 60 * 60 * 1000
 /** Backlog が基準とするタイムゾーンのオフセット（JST = UTC+9）。 */
 const JST_OFFSET_MS = 9 * 60 * 60 * 1000
 
-const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/u
 
 /**
  * 取り扱う DateKey の下限と上限。

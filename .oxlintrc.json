@@ -1,9 +1,22 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["typescript", "unicorn", "oxc", "import", "promise", "react", "jsx-a11y", "vitest"],
+  "plugins": [
+    "eslint",
+    "typescript",
+    "unicorn",
+    "oxc",
+    "import",
+    "promise",
+    "react",
+    "jsx-a11y",
+    "vitest",
+    "jsdoc",
+    "node"
+  ],
   "categories": {
     "correctness": "error",
     "suspicious": "error",
+    "pedantic": "error",
     "perf": "warn"
   },
   "env": {
@@ -11,6 +24,17 @@
     "es2024": true
   },
   "ignorePatterns": ["dist/**", ".wrangler/**", "public/**", "worker-configuration.d.ts", "skills/**"],
+  // 外部の ESLint プラグイン。oxlint では alpha 扱いの機能だが、
+  // 本体に無い検査（React Compiler のルール、CSS Modules のクラス名、
+  // 正規表現、Testing Library、SonarJS）を得るために例外的に使っている。
+  "jsPlugins": [
+    { "name": "hooks", "specifier": "eslint-plugin-react-hooks" },
+    { "name": "css-modules", "specifier": "eslint-plugin-css-modules" },
+    { "name": "no-unsanitized", "specifier": "eslint-plugin-no-unsanitized" },
+    { "name": "regexp", "specifier": "eslint-plugin-regexp" },
+    { "name": "testing-library", "specifier": "eslint-plugin-testing-library" },
+    { "name": "sonarjs", "specifier": "eslint-plugin-sonarjs" }
+  ],
   "rules": {
     "no-console": [
       "error",
@@ -87,7 +111,248 @@
     "react/react-in-jsx-scope": "off",
     "typescript/consistent-return": "off",
     "react/set-state-in-effect": "off",
-    "no-await-in-loop": "off"
+    "no-await-in-loop": "off",
+    // フックの依存配列と呼び出し位置は自力で気付けないため明示的に有効化する。
+    "react/exhaustive-deps": "error",
+    "react/rules-of-hooks": "error",
+
+    // --- pedantic カテゴリのうち、この構成に合わないもの ---
+    // 同じ検査を typescript/require-await が担う。あちらは型を見るぶん精度が高い。
+    "require-await": "off",
+    // 行数や引数の数の上限は、切りどころを機械的に決めても読みやすくならない。
+    "max-lines": "off",
+    "max-lines-per-function": "off",
+    "max-statements": "off",
+    "max-classes-per-file": "off",
+    "import/max-dependencies": "off",
+    // テスト内の `?.` まで条件分岐として数えられてしまう。
+    "vitest/no-conditional-in-test": "off",
+    // Number.parseInt と Number() は末尾のゴミの扱いが違う。置き換えは挙動を変える。
+    "unicorn/prefer-number-coercion": "off",
+    // 引数を 1 つしか取らない述語を渡しているので、index が紛れ込む心配がない。
+    "unicorn/no-array-callback-reference": "off",
+    // React のマウント先取得は getElementById のほうが意図が伝わる。
+    "unicorn/prefer-query-selector": "off",
+    // projectColor の `| 0` は Math.imul のための int32 変換で、Math.trunc とは違う。
+    "unicorn/prefer-math-trunc": "off",
+    // Hono の onError は Node のコールバック規約ではない。
+    "promise/prefer-await-to-callbacks": "off",
+    // 型は TypeScript が持っているので、JSDoc に @param / @returns は書かない。
+    "jsdoc/require-param": "off",
+    "jsdoc/require-param-type": "off",
+    "jsdoc/require-param-description": "off",
+    "jsdoc/require-returns": "off",
+    "jsdoc/require-returns-type": "off",
+    "jsdoc/require-returns-description": "off",
+    "jsdoc/require-property-type": "off",
+    "jsdoc/require-yields": "off",
+
+    // --- style / restriction から個別に採用するもの ---
+    // カテゴリごと有効にすると no-ternary や no-magic-numbers まで付いてくるため、
+    // このコードベースで意味のあるものだけを選んでいる。
+    "typescript/consistent-type-definitions": ["error", "type"],
+    "import/consistent-type-specifier-style": ["error", "prefer-top-level"],
+    // コア側は `import type` を重複と見なすため、型を理解する import 側を使う。
+    "no-duplicate-imports": "off",
+    "import/no-duplicates": "error",
+    "no-script-url": "error",
+    "no-useless-assignment": "error",
+    "prefer-named-capture-group": "error",
+    "unicorn/catch-error-name": "error",
+    "unicorn/no-await-expression-member": "error",
+    "unicorn/numeric-separators-style": "error",
+    "unicorn/prefer-response-static-json": "error",
+    "unicorn/prefer-string-raw": "error",
+    "unicorn/switch-case-braces": "error",
+
+    // --- ここから外部 ESLint プラグイン（jsPlugins）のルール ---
+    // React Compiler 由来のフックのルール。oxlint 本体は rules-of-hooks と
+    // exhaustive-deps しか持たないため、残りをここで補う。
+    "hooks/static-components": "error",
+    "hooks/use-memo": "error",
+    "hooks/void-use-memo": "error",
+    "hooks/preserve-manual-memoization": "error",
+    "hooks/incompatible-library": "error",
+    "hooks/immutability": "error",
+    "hooks/globals": "error",
+    "hooks/refs": "error",
+    "hooks/error-boundaries": "error",
+    "hooks/purity": "error",
+    "hooks/set-state-in-render": "error",
+    "hooks/unsupported-syntax": "error",
+    "hooks/config": "error",
+    "hooks/gating": "error",
+
+    // styles.xxx が CSS 側に無い（あるいは CSS 側が使われていない）のを検出する。
+    // CSS Modules はタイプミスしても undefined になるだけで気付けない。
+    "css-modules/no-undef-class": "error",
+    "css-modules/no-unused-class": "error",
+
+    // innerHTML などへの安全でない代入を禁じる。
+    "no-unsanitized/property": "error",
+    "no-unsanitized/method": "error",
+
+    // 正規表現の書き間違い。推奨セットをそのまま採用している。
+    "regexp/confusing-quantifier": "error",
+    "regexp/control-character-escape": "error",
+    "regexp/match-any": "error",
+    "regexp/negation": "error",
+    "regexp/no-contradiction-with-assertion": "error",
+    "regexp/no-dupe-characters-character-class": "error",
+    "regexp/no-dupe-disjunctions": "error",
+    "regexp/no-empty-alternative": "error",
+    "regexp/no-empty-capturing-group": "error",
+    "regexp/no-empty-character-class": "error",
+    "regexp/no-empty-group": "error",
+    "regexp/no-empty-lookarounds-assertion": "error",
+    "regexp/no-empty-string-literal": "error",
+    "regexp/no-escape-backspace": "error",
+    "regexp/no-extra-lookaround-assertions": "error",
+    "regexp/no-invalid-regexp": "error",
+    "regexp/no-invisible-character": "error",
+    "regexp/no-lazy-ends": "error",
+    "regexp/no-legacy-features": "error",
+    "regexp/no-misleading-capturing-group": "error",
+    "regexp/no-misleading-unicode-character": "error",
+    "regexp/no-missing-g-flag": "error",
+    "regexp/no-non-standard-flag": "error",
+    "regexp/no-obscure-range": "error",
+    "regexp/no-optional-assertion": "error",
+    "regexp/no-potentially-useless-backreference": "error",
+    "regexp/no-super-linear-backtracking": "error",
+    "regexp/no-trivially-nested-assertion": "error",
+    "regexp/no-trivially-nested-quantifier": "error",
+    "regexp/no-unused-capturing-group": "error",
+    "regexp/no-useless-assertions": "error",
+    "regexp/no-useless-backreference": "error",
+    "regexp/no-useless-character-class": "error",
+    "regexp/no-useless-dollar-replacements": "error",
+    "regexp/no-useless-escape": "error",
+    "regexp/no-useless-flag": "error",
+    "regexp/no-useless-lazy": "error",
+    "regexp/no-useless-non-capturing-group": "error",
+    "regexp/no-useless-quantifier": "error",
+    "regexp/no-useless-range": "error",
+    "regexp/no-useless-set-operand": "error",
+    "regexp/no-useless-string-literal": "error",
+    "regexp/no-useless-two-nums-quantifier": "error",
+    "regexp/no-zero-quantifier": "error",
+    "regexp/optimal-lookaround-quantifier": "error",
+    "regexp/optimal-quantifier-concatenation": "error",
+    "regexp/prefer-character-class": "error",
+    "regexp/prefer-d": "error",
+    "regexp/prefer-plus-quantifier": "error",
+    "regexp/prefer-predefined-assertion": "error",
+    "regexp/prefer-question-quantifier": "error",
+    "regexp/prefer-range": "error",
+    "regexp/prefer-set-operation": "error",
+    "regexp/prefer-star-quantifier": "error",
+    "regexp/prefer-unicode-codepoint-escapes": "error",
+    "regexp/prefer-w": "error",
+    "regexp/simplify-set-operations": "error",
+    "regexp/sort-flags": "error",
+    "regexp/strict": "error",
+    "regexp/use-ignore-case": "error",
+
+    // Testing Library の使い方。no-node-access だけ外している
+    // （テスト環境では CSS Modules のクラス名が undefined になるため、
+    // 意図的に data-testid を querySelector で引いている）。
+    "testing-library/await-async-events": ["error", { "eventModule": "userEvent" }],
+    "testing-library/await-async-queries": "error",
+    "testing-library/await-async-utils": "error",
+    "testing-library/no-await-sync-events": ["error", { "eventModules": ["fire-event"] }],
+    "testing-library/no-await-sync-queries": "error",
+    "testing-library/no-container": "error",
+    "testing-library/no-debugging-utils": "error",
+    "testing-library/no-dom-import": ["error", "react"],
+    "testing-library/no-global-regexp-flag-in-query": "error",
+    "testing-library/no-manual-cleanup": "error",
+    "testing-library/no-promise-in-fire-event": "error",
+    "testing-library/no-render-in-lifecycle": "error",
+    "testing-library/no-unnecessary-act": "error",
+    "testing-library/no-wait-for-multiple-assertions": "error",
+    "testing-library/no-wait-for-side-effects": "error",
+    "testing-library/no-wait-for-snapshot": "error",
+    "testing-library/prefer-find-by": "error",
+    "testing-library/prefer-presence-queries": "error",
+    "testing-library/prefer-query-by-disappearance": "error",
+    "testing-library/prefer-screen-queries": "error",
+    "testing-library/render-result-naming-convention": "error",
+
+    // SonarJS。279 ルールのうち大半は oxlint 本体と重複するか AWS 向けなので、
+    // このリポジトリで意味のあるものだけを選んでいる。
+    "sonarjs/no-all-duplicated-branches": "error",
+    "sonarjs/no-alphabetical-sort": "error",
+    "sonarjs/no-collection-size-mischeck": "error",
+    "sonarjs/no-dead-store": "error",
+    "sonarjs/no-element-overwrite": "error",
+    "sonarjs/no-empty-collection": "error",
+    "sonarjs/no-floating-point-equality": "error",
+    "sonarjs/no-gratuitous-expressions": "error",
+    "sonarjs/no-identical-conditions": "error",
+    "sonarjs/no-identical-expressions": "error",
+    "sonarjs/no-identical-functions": "error",
+    "sonarjs/no-ignored-return": "error",
+    "sonarjs/no-in-misuse": "error",
+    "sonarjs/no-invariant-returns": "error",
+    "sonarjs/no-inverted-boolean-check": "error",
+    "sonarjs/no-misleading-array-reverse": "error",
+    "sonarjs/no-nested-assignment": "error",
+    "sonarjs/no-redundant-assignments": "error",
+    "sonarjs/no-redundant-boolean": "error",
+    "sonarjs/no-same-line-conditional": "error",
+    "sonarjs/no-try-promise": "error",
+    "sonarjs/no-unthrown-error": "error",
+    "sonarjs/no-unused-collection": "error",
+    "sonarjs/no-use-of-empty-return-value": "error",
+    "sonarjs/non-existent-operator": "error",
+    "sonarjs/operation-returning-nan": "error",
+    "sonarjs/reduce-initial-value": "error",
+    "sonarjs/updated-const-var": "error",
+    "sonarjs/updated-loop-counter": "error",
+    "sonarjs/jsx-no-leaked-render": "error",
+    "sonarjs/no-hook-setter-in-body": "error",
+    "sonarjs/no-uniq-key": "error",
+    "sonarjs/no-useless-react-setstate": "error",
+    "sonarjs/code-eval": "error",
+    "sonarjs/confidential-information-logging": "error",
+    "sonarjs/cookie-no-httponly": "error",
+    "sonarjs/encryption-secure-mode": "error",
+    "sonarjs/hashing": "error",
+    "sonarjs/insecure-cookie": "error",
+    "sonarjs/no-clear-text-protocols": "error",
+    "sonarjs/no-hardcoded-ip": "error",
+    "sonarjs/no-hardcoded-passwords": "error",
+    "sonarjs/no-hardcoded-secrets": "error",
+    "sonarjs/no-intrusive-permissions": "error",
+    "sonarjs/no-mixed-content": "error",
+    "sonarjs/no-weak-cipher": "error",
+    "sonarjs/no-weak-keys": "error",
+    "sonarjs/os-command": "error",
+    "sonarjs/post-message": "error",
+    "sonarjs/production-debug": "error",
+    "sonarjs/pseudo-random": "error",
+    "sonarjs/unverified-certificate": "error",
+    "sonarjs/unverified-hostname": "error",
+    "sonarjs/regex-complexity": "error",
+    "sonarjs/slow-regex": "error",
+    "sonarjs/stateful-regex": "error",
+    "sonarjs/super-linear-regex": "error",
+    "sonarjs/assertions-in-tests": "error",
+    "sonarjs/hooks-before-test-cases": "error",
+    "sonarjs/no-duplicate-test-title": "error",
+    "sonarjs/no-empty-test-file": "error",
+    "sonarjs/no-empty-test-title": "error",
+    "sonarjs/no-exclusive-tests": "error",
+    "sonarjs/no-incomplete-assertions": "error",
+    "sonarjs/no-same-argument-assert": "error",
+    "sonarjs/no-skipped-tests": "error",
+    "sonarjs/cognitive-complexity": "error",
+
+    // 入れ子の三項演算子はテストのフェッチモックなどで意図的に使っている。
+    "sonarjs/no-nested-conditional": "off",
+    // it.each への書き換えは、失敗時にどのケースかが分かりにくくなる。
+    "sonarjs/parameterized-tests": "off"
   },
   "overrides": [
     {
@@ -106,7 +371,17 @@
         "typescript/no-unnecessary-type-assertion": "off",
         "typescript/non-nullable-type-assertion-style": "off",
         "typescript/no-base-to-string": "off",
-        "unicorn/consistent-function-scoping": "off"
+        "unicorn/consistent-function-scoping": "off",
+        // 描画結果そのものを確かめたいので、dataset ではなく属性を直接読む。
+        "unicorn/prefer-dom-node-dataset": "off",
+        // Workers の型が Body#append と衝突して型エラーになる。
+        "unicorn/prefer-dom-node-append": "off",
+        // 「undefined を渡したとき」を試すテストでは明示的な undefined に意味がある。
+        "unicorn/no-useless-undefined": "off",
+        // vi.fn() は値を返す型なので、void を期待する props に渡すたびに検出される。
+        "typescript/strict-void-return": "off",
+        // http:// を正規化・拒否できることを確かめるテストで使っている。
+        "sonarjs/no-clear-text-protocols": "off"
       }
     },
     {
@@ -119,7 +394,11 @@
         "typescript/no-unsafe-call": "off",
         "typescript/no-unsafe-return": "off",
         "typescript/no-base-to-string": "off",
-        "typescript/restrict-template-expressions": "off"
+        "typescript/restrict-template-expressions": "off",
+        // 型のない .mjs では真偽値の `||` まで nullish 合体の候補と見なされる。
+        "typescript/prefer-nullish-coalescing": "off",
+        // 実行するコマンドはこのファイル内のリテラルで、外部入力は混ざらない。
+        "sonarjs/os-command": "off"
       }
     }
   ]

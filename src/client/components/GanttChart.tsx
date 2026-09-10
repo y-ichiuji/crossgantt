@@ -18,7 +18,8 @@ import {
 } from '../../shared/gantt'
 import type { GanttIssue, ViewFilter } from '../../shared/types'
 import { AssigneeAvatar } from './AssigneeAvatar'
-import { IssueTooltip, type TooltipState } from './IssueTooltip'
+import { IssueTooltip } from './IssueTooltip'
+import type { TooltipState } from './IssueTooltip'
 
 import styles from './GanttChart.module.css'
 

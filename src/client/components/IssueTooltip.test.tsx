@@ -2,13 +2,25 @@ import { render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { makeIssue } from '../../shared/test-fixtures'
-import { IssueTooltip, type TooltipState } from './IssueTooltip'
+import { IssueTooltip } from './IssueTooltip'
+import type { TooltipState } from './IssueTooltip'
 
 function state(overrides: Partial<TooltipState> = {}): TooltipState {
   return { issue: makeIssue(), x: 100, y: 200, overdue: false, ...overrides }
 }
 
 describe('IssueTooltip', () => {
+  // innerWidth を差し替えたまま返すと、以降のテストが 1600px の環境を
+  // 前提に動いてしまい、実行順に依存した不安定な結果になる。必ず戻す。
+  const originalInnerWidth = Object.getOwnPropertyDescriptor(window, 'innerWidth')
+  afterEach(() => {
+    if (originalInnerWidth) {
+      Object.defineProperty(window, 'innerWidth', originalInnerWidth)
+    } else {
+      Reflect.deleteProperty(window, 'innerWidth')
+    }
+  })
+
   it('課題キーと件名を表示する', () => {
     render(<IssueTooltip state={state()} />)
     expect(screen.getByText('PJA-1')).toBeDefined()
@@ -37,7 +49,7 @@ describe('IssueTooltip', () => {
 
   it('遅延なら期間に印を付ける', () => {
     render(<IssueTooltip state={state({ overdue: true })} />)
-    expect(screen.getByText(/（遅延）/).getAttribute('data-overdue')).toBe('true')
+    expect(screen.getByText(/（遅延）/u).getAttribute('data-overdue')).toBe('true')
   })
 
   it('担当者・状態・工数を表示する', () => {
@@ -65,17 +77,6 @@ describe('IssueTooltip', () => {
   it('マイルストーンが無ければ行ごと出さない', () => {
     render(<IssueTooltip state={state({ issue: makeIssue({ milestoneNames: [] }) })} />)
     expect(screen.queryByText('マイルストーン')).toBeNull()
-  })
-
-  // innerWidth を差し替えたまま返すと、以降のテストが 1600px の環境を
-  // 前提に動いてしまい、実行順に依存した不安定な結果になる。必ず戻す。
-  const originalInnerWidth = Object.getOwnPropertyDescriptor(window, 'innerWidth')
-  afterEach(() => {
-    if (originalInnerWidth) {
-      Object.defineProperty(window, 'innerWidth', originalInnerWidth)
-    } else {
-      Reflect.deleteProperty(window, 'innerWidth')
-    }
   })
 
   it('ビューポートの右端からはみ出さない', () => {

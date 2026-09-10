@@ -95,10 +95,7 @@ describe('normalizeIssue', () => {
 function makeFetchMock(handler: (url: URL) => unknown) {
   return vi.fn(async (input: RequestInfo | URL) => {
     const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url)
-    return new Response(JSON.stringify(handler(url)), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' }
-    })
+    return Response.json(handler(url), { status: 200 })
   }) as unknown as typeof fetch
 }
 

@@ -38,12 +38,12 @@ await check('トップページが HTML を返す', async () => {
   assert(html.includes('CrossGantt for Backlog'), 'タイトルが無い')
   // 開発時は /src/client/index.tsx、本番はハッシュ付きのバンドルを読み込む。
   // どちらも無ければクライアントが起動せず真っ白になる。
-  const isProdBundle = /<script[^>]+src="\/assets\/[^"]+\.js"/.test(html)
+  const isProdBundle = /<script[^>]+src="\/assets\/[^"]+\.js"/u.test(html)
   assert(isProdBundle || html.includes('src="/src/client/index.tsx"'), 'クライアントのスクリプトタグが無い')
   // 本番ビルドでは CSS が独立したアセットになり、manifest 経由で link が出る。
   // 開発時はスタイルをクライアント JS が注入するため link は存在しない。
   if (isProdBundle) {
-    assert(/<link[^>]+rel="stylesheet"[^>]+href="\/assets\/[^"]+\.css"/.test(html), 'スタイルシートの link が無い')
+    assert(/<link[^>]+rel="stylesheet"[^>]+href="\/assets\/[^"]+\.css"/u.test(html), 'スタイルシートの link が無い')
   }
 })
 

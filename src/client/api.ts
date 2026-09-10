@@ -36,7 +36,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(path, { ...init, credentials: 'same-origin' })
 
   if (!response.ok) {
-    let body: ApiErrorBody | null = null
+    let body: ApiErrorBody | null
     try {
       body = (await response.json()) as ApiErrorBody
     } catch {

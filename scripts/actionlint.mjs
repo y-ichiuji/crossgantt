@@ -15,7 +15,8 @@ import { createLinter } from 'actionlint'
 
 const WORKFLOW_DIR = '.github/workflows'
 
-const files = (await readdir(WORKFLOW_DIR)).filter((name) => name.endsWith('.yml') || name.endsWith('.yaml')).toSorted()
+const entries = await readdir(WORKFLOW_DIR)
+const files = entries.filter((name) => name.endsWith('.yml') || name.endsWith('.yaml')).toSorted()
 
 if (files.length === 0) {
   console.log('検査対象のワークフローがありません')

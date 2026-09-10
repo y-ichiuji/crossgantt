@@ -64,7 +64,7 @@ Backlog には標準のガントチャート機能がありますが、**1 プ�
 
 ### 5.2 ガント画面のワイヤーフレーム
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │ CrossGantt   space: example.backlog.jp        [接続設定] [再読込] [URLをコピー] │
 ├──────────────────────────────────────────────────────────────────────────────┤
@@ -298,7 +298,7 @@ type ViewFilter = {
 
 URL 例:
 
-```
+```text
 /?projects=101,102&assignees=5,8&from=2026-09-01&to=2026-12-31&group=assignee&zoom=week
 ```
 
@@ -308,7 +308,7 @@ Backlog の OAuth 2.0（認可コードフロー）でログインします。
 
 ### フロー
 
-```
+```text
 ブラウザ                     Worker                         Backlog
    │  スペースを入力            │                               │
    ├── GET /api/auth/login ────▶│                               │
@@ -439,6 +439,8 @@ checkout する SHA は `workflow_run` のイベントから取るため、gate 
 | ------------------------ | ------------------------------------------ |
 | `pnpm format:check`      | oxfmt による整形の確認                     |
 | `pnpm lint`              | oxlint（type-aware ルール込み）            |
+| `pnpm lint:css`          | stylelint による CSS の検査                |
+| `pnpm lint:md`           | markdownlint による Markdown の検査        |
 | `pnpm lint:actions`      | actionlint による GitHub Actions の検査    |
 | `pnpm spellcheck`        | cspell によるスペルチェック                |
 | `pnpm typecheck`         | `tsc --noEmit` による型チェック            |
@@ -450,6 +452,27 @@ checkout する SHA は `workflow_run` のイベントから取るため、gate 
 
 `oxlint --type-aware` は型情報を使う lint ルールを実行するもので、型エラー自体は検出しません（実際に型エラーを仕込んで確認済み）。そのため型検査は `tsc --noEmit` で別途行っています。
 
+整形は oxfmt に一本化しています。oxfmt は TypeScript / JavaScript のほか CSS・Markdown・JSON・YAML も扱うため、リポジトリ内の全ファイルが 1 つの整形ツールで揃います。lint はそれぞれ専用のものを使い、CSS は stylelint（CSS Modules の `composes` と lowerCamelCase のクラス名を許可）、Markdown は markdownlint-cli2（体裁は oxfmt に任せ、行長などのルールは無効）で検査します。
+
+シェルスクリプトは意図的に置いていません。`.sh` が 1 つでもあると、そのためだけに shellcheck を足すことになりますが、npm の shellcheck はインストール時にバイナリを取得するもので、pnpm-lock.yaml による固定や `minimumReleaseAge` の保護から外れます。Claude Code のフックも `scripts/format-and-lint-hook.mjs` として Node で書き、リポジトリ内のすべてのファイルが oxfmt / oxlint の対象に入るようにしています。
+
+oxlint のカテゴリは `correctness` / `suspicious` / `pedantic` をエラー、`perf` を警告として有効にしています。`style` と `restriction` は、`no-ternary`・`no-magic-numbers`・`oxc/no-async-await` のようにこのコードベースの書き方と衝突するルールが大半のため、カテゴリごとの有効化はせず、有用なものを個別に指定しています。`react-perf` プラグインは、ガントのバーが位置と幅を `style` 属性で受け取る都合上、`jsx-no-new-object-as-prop` が避けようのない検出を大量に出すため有効にしていません。
+
+oxlint 本体に無い検査は、外部の ESLint プラグインを `jsPlugins` として読み込んで補っています。`jsPlugins` は oxlint 側で alpha 扱いかつ semver の対象外であり、すべてのバージョンを固定している本リポジトリの方針とは本来かみ合いませんが、本体では代えの利かない検査があるため例外として採用しています。
+
+| プラグイン                    | 何を見るか                                                                                                                                  |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| eslint-plugin-css-modules     | `styles.xxx` が CSS 側に存在するか、CSS 側に使われていないクラスが無いか。CSS Modules はタイプミスしても `undefined` になるだけで気付けない |
+| eslint-plugin-react-hooks     | React Compiler 由来のルール。`refs`（描画中の ref 参照）・`purity`・`immutability` など、oxlint 本体が持たないもの                          |
+| eslint-plugin-regexp          | 正規表現の書き間違い。推奨セット 60 ルールをそのまま採用                                                                                    |
+| eslint-plugin-no-unsanitized  | `innerHTML` などへの安全でない代入                                                                                                          |
+| eslint-plugin-testing-library | Testing Library の使い方。`no-node-access` だけは、テスト環境で CSS Modules のクラス名が `undefined` になるため無効にしている               |
+| eslint-plugin-sonarjs         | バグ・セキュリティ・正規表現の実行時間・テスト品質・認知的複雑度。279 ルールのうち本体と重複しないものだけを選択                            |
+
+導入時に `sonarjs/super-linear-regex` が `normalizeSpace` のパス除去（`/\/.*$/`）を指摘しました。開始位置ごとに `.*` を試すため、スラッシュの多い入力で実行時間が入力長の二乗に近づくもので、この値はログイン画面から渡ってくるユーザー入力です。`indexOf` による切り出しに置き換えています。
+
+lint の実行時間は 0.6 秒から 2.0 秒に増えました（`pnpm lint`、87 ファイル）。
+
 ## 15. 将来拡張
 
 - ガントバーのドラッグによる `startDate` / `dueDate` の更新（`PATCH /api/v2/issues/{id}`、楽観的更新 + 失敗時ロールバック）
@@ -460,7 +483,7 @@ checkout する SHA は `workflow_run` のイベントから取るため、gate 
 
 ## 参考
 
-- Backlog API v2: 課題一覧の取得 — https://developer.nulab.com/docs/backlog/api/2/get-issue-list/
-- Backlog API v2: プロジェクト一覧の取得 — https://developer.nulab.com/docs/backlog/api/2/get-project-list/
-- Backlog API: レート制限 — https://developer.nulab.com/docs/backlog/rate-limit/
-- Backlog API v2: レート制限の取得 — https://developer.nulab.com/docs/backlog/api/2/get-rate-limit/
+- Backlog API v2: 課題一覧の取得 — <https://developer.nulab.com/docs/backlog/api/2/get-issue-list/>
+- Backlog API v2: プロジェクト一覧の取得 — <https://developer.nulab.com/docs/backlog/api/2/get-project-list/>
+- Backlog API: レート制限 — <https://developer.nulab.com/docs/backlog/rate-limit/>
+- Backlog API v2: レート制限の取得 — <https://developer.nulab.com/docs/backlog/api/2/get-rate-limit/>

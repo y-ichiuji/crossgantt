@@ -8,7 +8,8 @@ import type { ApiErrorBody, Viewer } from '../../shared/types'
 import { BacklogApiError, BacklogClient } from '../backlog/client'
 import { fetchViewer } from '../backlog/masters'
 import { normalizeSpace } from '../backlog/space'
-import { type AppBindings, isSecureRequest, resolveOAuthConfig } from './config'
+import { isSecureRequest, resolveOAuthConfig } from './config'
+import type { AppBindings } from './config'
 import { buildAuthorizeUrl, exchangeCode, OAuthError } from './oauth'
 import {
   buildClearCookie,
@@ -75,9 +76,9 @@ auth.get('/callback', async (c) => {
   const secure = isSecureRequest(c.req.url)
   c.header('Cache-Control', 'no-store')
 
-  const error = c.req.query('error')
-  if (error) {
-    return c.redirect(`/?auth_error=${encodeURIComponent(error)}`, 302)
+  const authError = c.req.query('error')
+  if (authError) {
+    return c.redirect(`/?auth_error=${encodeURIComponent(authError)}`, 302)
   }
 
   const code = c.req.query('code')
@@ -122,11 +123,11 @@ auth.get('/callback', async (c) => {
       append: true
     })
     return c.redirect(stateRecord.returnTo, 302)
-  } catch (caught: unknown) {
-    if (caught instanceof OAuthError || caught instanceof BacklogApiError) {
+  } catch (error: unknown) {
+    if (error instanceof OAuthError || error instanceof BacklogApiError) {
       return c.redirect('/?auth_error=token_exchange_failed', 302)
     }
-    throw caught
+    throw error
   }
 })
 

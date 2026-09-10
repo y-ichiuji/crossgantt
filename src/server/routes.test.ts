@@ -48,7 +48,8 @@ describe('/issues のパラメータ検証', () => {
 
   beforeEach(async () => {
     kv = createMemoryKV()
-    cookie = (await seedSession(kv)).cookie
+    const seeded = await seedSession(kv)
+    cookie = seeded.cookie
   })
 
   it('プロジェクト未指定なら 400', async () => {

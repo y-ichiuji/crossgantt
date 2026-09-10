@@ -18,7 +18,7 @@ describe('SummaryBar', () => {
     expect(screen.getByText('100').textContent).toBe('100')
     expect(screen.getByText('7')).toBeDefined()
     expect(screen.getByText('12')).toBeDefined()
-    expect(screen.getByText(/取得 128 件/)).toBeDefined()
+    expect(screen.getByText(/取得 128 件/u)).toBeDefined()
   })
 
   it('遅延があれば強調の印を付ける', () => {
@@ -33,29 +33,29 @@ describe('SummaryBar', () => {
 
   it('打ち切られた場合は警告を出す', () => {
     setup({ truncated: true })
-    expect(screen.getByText(/件数が多いため一部のみ表示しています/)).toBeDefined()
+    expect(screen.getByText(/件数が多いため一部のみ表示しています/u)).toBeDefined()
   })
 
   it('打ち切られていなければ警告を出さない', () => {
     setup()
-    expect(screen.queryByText(/件数が多いため一部のみ表示しています/)).toBeNull()
+    expect(screen.queryByText(/件数が多いため一部のみ表示しています/u)).toBeNull()
   })
 
   it('読み込み中は「読み込み中…」を出す', () => {
     setup({ loading: true, fetchedAt: '2026-09-10T03:04:05.000Z' })
     expect(screen.getByText('読み込み中…')).toBeDefined()
-    expect(screen.queryByText(/リクエスト/)).toBeNull()
+    expect(screen.queryByText(/リクエスト/u)).toBeNull()
   })
 
   it('取得時刻とリクエスト数を表示する', () => {
     const date = new Date(2026, 8, 10, 15, 4)
     setup({ fetchedAt: date.toISOString() })
-    expect(screen.getByText(/15:04 時点/)).toBeDefined()
-    expect(screen.getByText(/Backlog API 30 リクエスト/)).toBeDefined()
+    expect(screen.getByText(/15:04 時点/u)).toBeDefined()
+    expect(screen.getByText(/Backlog API 30 リクエスト/u)).toBeDefined()
   })
 
   it('取得時刻が無ければ何も出さない', () => {
     setup({ fetchedAt: null })
-    expect(screen.queryByText(/時点/)).toBeNull()
+    expect(screen.queryByText(/時点/u)).toBeNull()
   })
 })

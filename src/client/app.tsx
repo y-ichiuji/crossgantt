@@ -57,6 +57,11 @@ function parseIdsKey(key: string): number[] {
   return key === '' ? [] : key.split(',').map(Number)
 }
 
+/** 現在のパスに検索文字列を付けた、履歴へ積むための URL。 */
+function pathWithSearch(search: string): string {
+  return search === '' ? window.location.pathname : `${window.location.pathname}?${search}`
+}
+
 /** コールバックが付けた auth_error を読み取り、URL からは取り除く。 */
 function consumeAuthError(): string | null {
   if (typeof window === 'undefined') {
@@ -68,8 +73,7 @@ function consumeAuthError(): string | null {
     return null
   }
   params.delete('auth_error')
-  const search = params.toString()
-  window.history.replaceState(null, '', `${window.location.pathname}${search === '' ? '' : `?${search}`}`)
+  window.history.replaceState(null, '', pathWithSearch(params.toString()))
   return AUTH_ERROR_MESSAGES[code] ?? `ログインに失敗しました（${code}）`
 }
 
@@ -365,9 +369,7 @@ export default function App() {
     if (typeof window === 'undefined') {
       return
     }
-    const search = filterToParams(filter).toString()
-    const next = `${window.location.pathname}${search === '' ? '' : `?${search}`}`
-    window.history.replaceState(null, '', next)
+    window.history.replaceState(null, '', pathWithSearch(filterToParams(filter).toString()))
   }, [filter])
 
   const handleReload = useCallback(() => {

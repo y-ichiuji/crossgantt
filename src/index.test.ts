@@ -70,9 +70,7 @@ describe('API のマウント', () => {
   it('セッションがあれば /api 配下が通る', async () => {
     const kv = createMemoryKV()
     const { cookie } = await seedSession(kv)
-    globalThis.fetch = vi.fn(
-      async () => new Response(JSON.stringify([]), { status: 200, headers: { 'Content-Type': 'application/json' } })
-    ) as typeof fetch
+    globalThis.fetch = vi.fn(async () => Response.json([], { status: 200 })) as typeof fetch
 
     const response = await app.request(
       'https://crossgantt.test/api/projects',

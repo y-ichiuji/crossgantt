@@ -2,7 +2,8 @@
  * サーバー側テスト用の補助。実装からは参照されない。
  */
 
-import { putSession, randomId, type SessionRecord } from './auth/session'
+import { putSession, randomId } from './auth/session'
+import type { SessionRecord } from './auth/session'
 
 type StoredValue = {
   value: string
@@ -76,9 +77,5 @@ export async function seedSession(
 
 /** JSON を返すレスポンスを組み立てる。 */
 export function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
-  return new Response(JSON.stringify(body), {
-    status: 200,
-    headers: { 'Content-Type': 'application/json' },
-    ...init
-  })
+  return Response.json(body, { status: 200, ...init })
 }

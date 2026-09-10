@@ -16,7 +16,7 @@ import {
 
 describe('randomId', () => {
   it('指定バイト数の 16 進文字列を返す', () => {
-    expect(randomId(8)).toMatch(/^[0-9a-f]{16}$/)
+    expect(randomId(8)).toMatch(/^[0-9a-f]{16}$/u)
     expect(randomId()).toHaveLength(64)
   })
 
@@ -79,6 +79,7 @@ describe('sanitizeReturnTo', () => {
   it('外部 URL やプロトコル相対 URL は / に落とす', () => {
     expect(sanitizeReturnTo('//evil.example.com')).toBe('/')
     expect(sanitizeReturnTo('https://evil.example.com')).toBe('/')
+    // oxlint-disable-next-line no-script-url -- 弾けることを確かめるための入力。
     expect(sanitizeReturnTo('javascript:alert(1)')).toBe('/')
   })
 
@@ -86,8 +87,8 @@ describe('sanitizeReturnTo', () => {
     // ブラウザは URL 解決時に `\` を `/` と同じに扱い、タブや改行は取り除く。
     // そのため以下はいずれも `//evil.example.com` と同じ意味になり、
     // 先頭の 2 文字だけを見る検査では素通りしてしまう。
-    expect(sanitizeReturnTo('/\\evil.example.com')).toBe('/')
-    expect(sanitizeReturnTo('/\\/evil.example.com')).toBe('/')
+    expect(sanitizeReturnTo(String.raw`/\evil.example.com`)).toBe('/')
+    expect(sanitizeReturnTo(String.raw`/\/evil.example.com`)).toBe('/')
     expect(sanitizeReturnTo('/\t/evil.example.com')).toBe('/')
     expect(sanitizeReturnTo('/\n//evil.example.com')).toBe('/')
   })

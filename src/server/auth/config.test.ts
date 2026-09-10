@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { type AppBindings, CALLBACK_PATH, defaultRedirectUri, isSecureRequest, resolveOAuthConfig } from './config'
+import { CALLBACK_PATH, defaultRedirectUri, isSecureRequest, resolveOAuthConfig } from './config'
+import type { AppBindings } from './config'
 
 function createEnv(overrides: Partial<AppBindings> = {}): AppBindings {
   return {

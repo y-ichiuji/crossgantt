@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/format-and-lint-hook.sh\"",
+            "command": "node \"$CLAUDE_PROJECT_DIR/scripts/format-and-lint-hook.mjs\"",
             "timeout": 120
           }
         ]

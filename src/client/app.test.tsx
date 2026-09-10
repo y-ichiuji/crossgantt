@@ -12,7 +12,7 @@ type Handler = (url: URL, init: RequestInit | undefined) => Response
 let requestedUrls: string[]
 
 function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+  return Response.json(body, { status })
 }
 
 const VIEWER = { id: 42, userId: null, name: '山田太郎', space: 'example.backlog.jp' }
@@ -112,7 +112,7 @@ describe('ログイン済みの表示', () => {
   it('サマリーに件数を出す', async () => {
     render(<App />)
     await waitFor(() => {
-      expect(screen.getByText(/取得 2 件/)).toBeDefined()
+      expect(screen.getByText(/取得 2 件/u)).toBeDefined()
     })
   })
 
@@ -216,7 +216,8 @@ describe('エラーの扱い', () => {
     stubFetch(defaultHandler(false))
 
     render(<App />)
-    expect((await screen.findByRole('alert')).textContent).toContain('weird_thing')
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain('weird_thing')
   })
 })
 

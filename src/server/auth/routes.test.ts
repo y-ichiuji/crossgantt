@@ -57,7 +57,8 @@ describe('GET /login', () => {
       createEnv(kv)
     )
     const state = new URL(response.headers.get('Location') ?? '').searchParams.get('state') ?? ''
-    expect((await takeState(kv, state))?.returnTo).toBe('/')
+    const record = await takeState(kv, state)
+    expect(record?.returnTo).toBe('/')
   })
 
   it('Backlog 以外のドメインは 400 で拒否する', async () => {

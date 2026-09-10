@@ -38,7 +38,7 @@ describe('LoginPanel', () => {
 
   it('submitting 中はボタンを無効にする', () => {
     setup({ submitting: true })
-    const button = screen.getByRole('button', { name: /Backlog へ移動しています/ }) as HTMLButtonElement
+    const button = screen.getByRole('button', { name: /Backlog へ移動しています/u }) as HTMLButtonElement
     expect(button.disabled).toBe(true)
   })
 
@@ -61,13 +61,13 @@ describe('LoginPanel', () => {
 
   it('読み取り専用であることを説明する', () => {
     setup()
-    expect(screen.getByText(/読み取り専用/)).toBeDefined()
-    expect(screen.getByText(/HttpOnly Cookie/)).toBeDefined()
+    expect(screen.getByText(/読み取り専用/u)).toBeDefined()
+    expect(screen.getByText(/HttpOnly Cookie/u)).toBeDefined()
   })
 
   it('API キーの入力欄を持たない', () => {
     setup()
-    expect(screen.queryByLabelText(/API キー/)).toBeNull()
+    expect(screen.queryByLabelText(/API キー/u)).toBeNull()
     expect(document.querySelector('input[type="password"]')).toBeNull()
   })
 })

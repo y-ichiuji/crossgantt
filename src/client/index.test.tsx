@@ -7,12 +7,8 @@ beforeEach(() => {
   vi.resetModules()
   document.body.replaceChildren()
   // 起動直後にセッション確認へ行くため、未ログインの応答を返しておく。
-  globalThis.fetch = vi.fn(
-    async () =>
-      new Response(JSON.stringify({ error: 'ログインしていません' }), {
-        status: 401,
-        headers: { 'Content-Type': 'application/json' }
-      })
+  globalThis.fetch = vi.fn(async () =>
+    Response.json({ error: 'ログインしていません' }, { status: 401 })
   ) as typeof fetch
 })
 

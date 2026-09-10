@@ -376,8 +376,8 @@ export const PROJECT_COLORS = [
  * 上位ビットを使うため、剰余ではなく 0〜1 に正規化してから割り当てる。
  */
 export function projectColor(projectId: number): string {
-  const hashed = Math.imul(projectId | 0, 2654435761) >>> 0
-  return PROJECT_COLORS[Math.floor((hashed / 0x1_0000_0000) * PROJECT_COLORS.length)]
+  const hashed = Math.imul(projectId | 0, 2_654_435_761) >>> 0
+  return PROJECT_COLORS[Math.floor((hashed / 0x1_00_00_00_00) * PROJECT_COLORS.length)]
 }
 
 /** Backlog がステータスに色を持たない場合のフォールバック。 */
@@ -388,7 +388,7 @@ export function statusColor(issue: GanttIssue): string {
   return issue.statusColor ?? FALLBACK_STATUS_COLOR
 }
 
-const HEX_COLOR = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i
+const HEX_COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/iu
 
 /** `#rgb` / `#rrggbb` を 0〜255 の RGB に分解する。解釈できなければ null。 */
 function parseHexColor(color: string): [number, number, number] | null {
@@ -397,7 +397,7 @@ function parseHexColor(color: string): [number, number, number] | null {
   }
   const hex = color.slice(1)
   // `#abc` を `#aabbcc` に展開する。16 進数字だけなので 1 文字ずつで問題ない。
-  const full = hex.length === 3 ? hex.replace(/./g, (char) => char + char) : hex
+  const full = hex.length === 3 ? hex.replaceAll(/./gu, (char) => char + char) : hex
   return [
     Number.parseInt(full.slice(0, 2), 16),
     Number.parseInt(full.slice(2, 4), 16),

@@ -117,45 +117,45 @@ describe('バーの描画', () => {
 describe('グルーピング', () => {
   it('担当者別にまとめて件数を出す', () => {
     setup([makeIssue(), OTHER_ISSUE], { groupBy: 'assignee' })
-    expect(screen.getByRole('button', { name: /山田太郎/ })).toBeDefined()
-    expect(screen.getByRole('button', { name: /佐藤花子/ })).toBeDefined()
+    expect(screen.getByRole('button', { name: /山田太郎/u })).toBeDefined()
+    expect(screen.getByRole('button', { name: /佐藤花子/u })).toBeDefined()
   })
 
   it('既定ではプロジェクト別にまとめる', () => {
     setup([makeIssue(), OTHER_ISSUE])
-    expect(screen.getByRole('button', { name: /PJA プロジェクトA/ })).toBeDefined()
-    expect(screen.getByRole('button', { name: /PJB プロジェクトB/ })).toBeDefined()
+    expect(screen.getByRole('button', { name: /PJA プロジェクトA/u })).toBeDefined()
+    expect(screen.getByRole('button', { name: /PJB プロジェクトB/u })).toBeDefined()
   })
 
   it('プロジェクト別にまとめる', () => {
     setup([makeIssue(), OTHER_ISSUE], { groupBy: 'project' })
-    expect(screen.getByRole('button', { name: /PJA プロジェクトA/ })).toBeDefined()
-    expect(screen.getByRole('button', { name: /PJB プロジェクトB/ })).toBeDefined()
+    expect(screen.getByRole('button', { name: /PJA プロジェクトA/u })).toBeDefined()
+    expect(screen.getByRole('button', { name: /PJB プロジェクトB/u })).toBeDefined()
   })
 
   it('マイルストーン別にまとめる', () => {
     setup([makeIssue({ milestoneNames: ['v1.0'] }), makeIssue({ id: 3, milestoneNames: [] })], {
       groupBy: 'milestone'
     })
-    expect(screen.getByRole('button', { name: /v1\.0/ })).toBeDefined()
-    expect(screen.getByRole('button', { name: /マイルストーンなし/ })).toBeDefined()
+    expect(screen.getByRole('button', { name: /v1\.0/u })).toBeDefined()
+    expect(screen.getByRole('button', { name: /マイルストーンなし/u })).toBeDefined()
   })
 
   it('遅延件数をバッジで示す', () => {
     setup([makeIssue({ dueDate: '2026-09-05' })], { groupBy: 'assignee' })
-    const group = screen.getByRole('button', { name: /山田太郎/ })
+    const group = screen.getByRole('button', { name: /山田太郎/u })
     expect(within(group).getByText('1件遅延')).toBeDefined()
   })
 
   it('担当者別のときは見出しにアイコンを出す', () => {
     setup([makeIssue()], { groupBy: 'assignee' })
-    const group = screen.getByRole('button', { name: /山田太郎/ })
+    const group = screen.getByRole('button', { name: /山田太郎/u })
     expect(group.querySelector('img')?.getAttribute('src')).toBe('/api/users/10/icon')
   })
 
   it('プロジェクト別のときは見出しにアイコンを出さない', () => {
     setup([makeIssue()], { groupBy: 'project' })
-    const group = screen.getByRole('button', { name: /PJA/ })
+    const group = screen.getByRole('button', { name: /PJA/u })
     expect(group.querySelector('img')).toBeNull()
   })
 
@@ -163,13 +163,13 @@ describe('グルーピング', () => {
     const { user } = setup([makeIssue()], { groupBy: 'assignee' })
     expect(document.querySelectorAll('[data-testid="gantt-bar"]')).toHaveLength(1)
 
-    await user.click(screen.getByRole('button', { name: /山田太郎/ }))
+    await user.click(screen.getByRole('button', { name: /山田太郎/u }))
     expect(document.querySelectorAll('[data-testid="gantt-bar"]')).toHaveLength(0)
   })
 
   it('もう一度押すと開く', async () => {
     const { user } = setup([makeIssue()], { groupBy: 'assignee' })
-    const toggle = screen.getByRole('button', { name: /山田太郎/ })
+    const toggle = screen.getByRole('button', { name: /山田太郎/u })
     await user.click(toggle)
     await user.click(toggle)
     expect(document.querySelectorAll('[data-testid="gantt-bar"]')).toHaveLength(1)
@@ -256,25 +256,25 @@ describe('ツールチップ', () => {
     await user.tab()
     await user.tab()
     await user.tab()
-    expect(screen.queryByRole('tooltip')).not.toBeNull()
+    expect(screen.getByRole('tooltip')).toBeDefined()
   })
 })
 
 describe('日付未設定セクション', () => {
   it('includeNoDate が有効なら件数を出す', () => {
     setup([makeIssue({ startDate: null, dueDate: null })], { includeNoDate: true })
-    expect(screen.getByRole('button', { name: /日付未設定の課題 1件/ })).toBeDefined()
+    expect(screen.getByRole('button', { name: /日付未設定の課題 1件/u })).toBeDefined()
   })
 
   it('includeNoDate が無効なら出さない', () => {
     setup([makeIssue(), makeIssue({ id: 5, startDate: null, dueDate: null })], { includeNoDate: false })
-    expect(screen.queryByRole('button', { name: /日付未設定の課題/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /日付未設定の課題/u })).toBeNull()
   })
 
   it('開くと課題の一覧を出す', async () => {
     const { user } = setup([makeIssue({ startDate: null, dueDate: null })], { includeNoDate: true })
-    await user.click(screen.getByRole('button', { name: /日付未設定の課題 1件/ }))
-    expect(screen.getByRole('link', { name: /PJA-1/ })).toBeDefined()
-    expect(screen.getByText(/PJA プロジェクトA \/ 山田太郎 \/ 未対応/)).toBeDefined()
+    await user.click(screen.getByRole('button', { name: /日付未設定の課題 1件/u }))
+    expect(screen.getByRole('link', { name: /PJA-1/u })).toBeDefined()
+    expect(screen.getByText(/PJA プロジェクトA \/ 山田太郎 \/ 未対応/u)).toBeDefined()
   })
 })

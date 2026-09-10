@@ -271,7 +271,7 @@
 
 /* 終端が確定していないことを示すため右端をぼかす。 */
 .bar[data-kind='open-ended'] {
-  mask-image: linear-gradient(to right, #000 70%, rgba(0, 0, 0, 0.15) 100%);
+  mask-image: linear-gradient(to right, #000000 70%, rgba(0, 0, 0, 0.15) 100%);
 }
 
 .bar[data-closed='true'] {
