@@ -9,8 +9,12 @@ import {
   isOverdue,
   minorTicks,
   monthTicks,
+  FALLBACK_STATUS_COLOR,
   PROJECT_COLORS,
   projectColor,
+  readableTextColor,
+  relativeLuminance,
+  statusColor,
   resolveBar,
   summarize,
   weekendBands,
@@ -253,5 +257,66 @@ describe('projectColor', () => {
   it('切りのよい ID どうしでも色が衝突しにくい', () => {
     const colors = [100, 200, 300, 400, 500].map(projectColor)
     expect(new Set(colors).size).toBeGreaterThanOrEqual(4)
+  })
+})
+
+describe('statusColor', () => {
+  it('Backlog のステータス色をそのまま使う', () => {
+    expect(statusColor(makeIssue({ statusColor: '#4488c5' }))).toBe('#4488c5')
+  })
+
+  it('色が無ければフォールバックする', () => {
+    expect(statusColor(makeIssue({ statusColor: null }))).toBe(FALLBACK_STATUS_COLOR)
+  })
+})
+
+describe('relativeLuminance', () => {
+  it('白は 1、黒は 0', () => {
+    expect(relativeLuminance('#ffffff')).toBeCloseTo(1, 5)
+    expect(relativeLuminance('#000000')).toBeCloseTo(0, 5)
+  })
+
+  it('3 桁の短縮形も扱える', () => {
+    expect(relativeLuminance('#fff')).toBeCloseTo(relativeLuminance('#ffffff'), 5)
+  })
+
+  it('解釈できない色は暗いものとして扱う', () => {
+    expect(relativeLuminance('rebeccapurple')).toBe(0)
+    expect(relativeLuminance('')).toBe(0)
+  })
+})
+
+describe('readableTextColor', () => {
+  it('明るい背景には濃い文字を選ぶ', () => {
+    // Backlog の「完了」の既定色。
+    expect(readableTextColor('#b0be3c')).toBe('#1c2430')
+    expect(readableTextColor('#ffffff')).toBe('#1c2430')
+  })
+
+  it('暗い背景には白い文字を選ぶ', () => {
+    // Backlog の「処理中」の既定色。
+    expect(readableTextColor('#4488c5')).toBe('#ffffff')
+    expect(readableTextColor('#000000')).toBe('#ffffff')
+  })
+
+  it('解釈できない色でも白い文字にフォールバックする', () => {
+    expect(readableTextColor('not-a-color')).toBe('#ffffff')
+  })
+})
+
+describe('groupIssues の担当者 ID', () => {
+  it('担当者別のときはグループに担当者 ID が入る', () => {
+    const groups = groupIssues([makeIssue({ assigneeId: 10, assigneeName: '山田太郎' })], 'assignee', TODAY)
+    expect(groups[0].assigneeId).toBe(10)
+  })
+
+  it('未割り当てのグループは null', () => {
+    const groups = groupIssues([makeIssue({ assigneeId: null, assigneeName: null })], 'assignee', TODAY)
+    expect(groups[0].assigneeId).toBeNull()
+  })
+
+  it('プロジェクト別のときは null', () => {
+    const groups = groupIssues([makeIssue()], 'project', TODAY)
+    expect(groups[0].assigneeId).toBeNull()
   })
 })

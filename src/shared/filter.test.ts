@@ -5,6 +5,20 @@ import type { ViewFilter } from './types'
 
 const NOW = Date.parse('2026-09-10T03:00:00Z')
 
+describe('defaultFilter', () => {
+  it('既定はプロジェクト別・日ズーム', () => {
+    const filter = defaultFilter(NOW)
+    expect(filter.groupBy).toBe('project')
+    expect(filter.zoom).toBe('day')
+  })
+
+  it('既定では完了と日付未設定を含めない', () => {
+    const filter = defaultFilter(NOW)
+    expect(filter.includeClosed).toBe(false)
+    expect(filter.includeNoDate).toBe(false)
+  })
+})
+
 describe('defaultRange', () => {
   it('今月 1 日から 3 か月後の末日まで', () => {
     expect(defaultRange(NOW)).toEqual({ from: '2026-09-01', to: '2026-12-31' })
@@ -41,8 +55,8 @@ describe('parseFilter', () => {
 
   it('不正な列挙値は既定値になる', () => {
     const filter = parseFilter(new URLSearchParams('group=unknown&zoom=year'), NOW)
-    expect(filter.groupBy).toBe('assignee')
-    expect(filter.zoom).toBe('week')
+    expect(filter.groupBy).toBe('project')
+    expect(filter.zoom).toBe('day')
   })
 
   it('真偽値を読む', () => {

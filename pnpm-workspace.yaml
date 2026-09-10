@@ -13,3 +13,12 @@ minimumReleaseAgeExclude:
 allowBuilds:
   esbuild: true
   workerd: true
+
+# miniflare（wrangler / @cloudflare/vite-plugin の依存）が古い版を固定しており、
+# 既知の脆弱性が残るため、修正版へ引き上げる。
+# どちらも開発時にしか使われず、Worker のバンドルには含まれない。
+# - undici: GHSA 複数（キャッシュ経由の情報漏えい、CRLF インジェクションなど）
+# - sharp: libheif の脆弱性
+overrides:
+  undici: '>=7.29.0 <8'
+  sharp: '>=0.35.4 <0.36'

@@ -64,6 +64,23 @@ describe('バーの描画', () => {
     expect(screen.getByLabelText('PJA-1 ログイン画面の改修（9/1〜9/15、未対応）')).toBeDefined()
   })
 
+  it('バーの色はステータスの色にする', () => {
+    setup([makeIssue({ statusColor: '#4488c5' })])
+    const bar = document.querySelector('[data-testid="gantt-bar"]') as HTMLElement
+    expect(bar.style.backgroundColor).toBe('#4488c5')
+  })
+
+  it('明るいステータス色の上では濃い文字にする', () => {
+    setup([makeIssue({ statusColor: '#b0be3c' })])
+    const bar = document.querySelector('[data-testid="gantt-bar"]') as HTMLElement
+    expect(bar.style.color).toBe('#1c2430')
+  })
+
+  it('担当者のアイコンを行に表示する', () => {
+    setup([makeIssue()])
+    expect(document.querySelector('img')?.getAttribute('src')).toBe('/api/users/10/icon')
+  })
+
   it('遅延している課題には遅延の印を付ける', () => {
     setup([makeIssue({ dueDate: '2026-09-05' })])
     expect(document.querySelector('[data-testid="gantt-bar"]')?.getAttribute('data-overdue')).toBe('true')
@@ -99,9 +116,15 @@ describe('バーの描画', () => {
 
 describe('グルーピング', () => {
   it('担当者別にまとめて件数を出す', () => {
-    setup([makeIssue(), OTHER_ISSUE])
+    setup([makeIssue(), OTHER_ISSUE], { groupBy: 'assignee' })
     expect(screen.getByRole('button', { name: /山田太郎/ })).toBeDefined()
     expect(screen.getByRole('button', { name: /佐藤花子/ })).toBeDefined()
+  })
+
+  it('既定ではプロジェクト別にまとめる', () => {
+    setup([makeIssue(), OTHER_ISSUE])
+    expect(screen.getByRole('button', { name: /PJA プロジェクトA/ })).toBeDefined()
+    expect(screen.getByRole('button', { name: /PJB プロジェクトB/ })).toBeDefined()
   })
 
   it('プロジェクト別にまとめる', () => {
@@ -119,13 +142,25 @@ describe('グルーピング', () => {
   })
 
   it('遅延件数をバッジで示す', () => {
-    setup([makeIssue({ dueDate: '2026-09-05' })])
+    setup([makeIssue({ dueDate: '2026-09-05' })], { groupBy: 'assignee' })
     const group = screen.getByRole('button', { name: /山田太郎/ })
     expect(within(group).getByText('1件遅延')).toBeDefined()
   })
 
+  it('担当者別のときは見出しにアイコンを出す', () => {
+    setup([makeIssue()], { groupBy: 'assignee' })
+    const group = screen.getByRole('button', { name: /山田太郎/ })
+    expect(group.querySelector('img')?.getAttribute('src')).toBe('/api/users/10/icon')
+  })
+
+  it('プロジェクト別のときは見出しにアイコンを出さない', () => {
+    setup([makeIssue()], { groupBy: 'project' })
+    const group = screen.getByRole('button', { name: /PJA/ })
+    expect(group.querySelector('img')).toBeNull()
+  })
+
   it('グループを折りたたむと課題行が消える', async () => {
-    const { user } = setup([makeIssue()])
+    const { user } = setup([makeIssue()], { groupBy: 'assignee' })
     expect(document.querySelectorAll('[data-testid="gantt-bar"]')).toHaveLength(1)
 
     await user.click(screen.getByRole('button', { name: /山田太郎/ }))
@@ -133,7 +168,7 @@ describe('グルーピング', () => {
   })
 
   it('もう一度押すと開く', async () => {
-    const { user } = setup([makeIssue()])
+    const { user } = setup([makeIssue()], { groupBy: 'assignee' })
     const toggle = screen.getByRole('button', { name: /山田太郎/ })
     await user.click(toggle)
     await user.click(toggle)
@@ -158,6 +193,18 @@ describe('目盛りと今日線', () => {
       to: '2027-01-31'
     })
     expect(document.querySelector('[data-testid="today-line"]')).toBeNull()
+  })
+
+  it('日ズームでは 1 日ごとの罫線幅を渡す', () => {
+    setup([makeIssue()], { zoom: 'day' })
+    const scroller = document.querySelector('[data-testid="gantt-scroller"]')
+    expect(scroller?.getAttribute('style')).toContain('--grid-step: 30px')
+  })
+
+  it('週ズームでは 1 週ごとの罫線幅を渡す', () => {
+    setup([makeIssue()], { zoom: 'week' })
+    const scroller = document.querySelector('[data-testid="gantt-scroller"]')
+    expect(scroller?.getAttribute('style')).toContain('--grid-step: 84px')
   })
 
   it('日ズームでは土日に帯を出す', () => {

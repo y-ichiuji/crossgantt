@@ -25,8 +25,8 @@ export function defaultFilter(now: number = Date.now()): ViewFilter {
     from,
     to,
     keyword: '',
-    groupBy: 'assignee',
-    zoom: 'week',
+    groupBy: 'project',
+    zoom: 'day',
     includeClosed: false,
     includeNoDate: false
   }

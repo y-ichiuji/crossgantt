@@ -18,7 +18,7 @@ import { getSession, putSession, readCookie, SESSION_COOKIE } from './auth/sessi
 import { BacklogApiError, BacklogClient } from './backlog/client'
 import { fetchGanttIssues } from './backlog/issues'
 import { fetchMembers, fetchProjects, fetchStatusGroups, resolveStatusIds } from './backlog/masters'
-import { hashKey, withJsonCache } from './cache'
+import { hashKey, matchCachedResponse, putCachedResponse, withJsonCache } from './cache'
 
 export type ApiEnv = {
   Bindings: AppBindings
@@ -222,6 +222,42 @@ api.get('/issues', async (c) => {
   })
 
   return c.json(body)
+})
+
+/** アバター画像のキャッシュ秒数。ユーザーのアイコンは頻繁には変わらない。 */
+const ICON_TTL = 3600
+
+/**
+ * 担当者のアイコン画像を中継する。
+ *
+ * Backlog のアイコン取得はアクセストークンを要するため、`<img src>` から
+ * 直接は叩けない。ここで中継し、ブラウザと Worker の両方でキャッシュする。
+ * アイコンはレート制限の Icon 区分に属し、上限が低いためキャッシュが重要。
+ */
+api.get('/users/:userId/icon', async (c) => {
+  const userId = Number.parseInt(c.req.param('userId'), 10)
+  if (!Number.isSafeInteger(userId) || userId <= 0) {
+    return c.json<ApiErrorBody>({ error: 'ユーザー ID が正しくありません' }, 400)
+  }
+
+  const client = c.var.client
+  const cacheKey = await hashKey('icon', c.var.scopeHash, String(userId))
+  const cached = await matchCachedResponse(cacheKey)
+  if (cached) {
+    return cached
+  }
+
+  const upstream = await client.getBinary(`/users/${userId}/icon`)
+  const body = await upstream.arrayBuffer()
+  const response = new Response(body, {
+    headers: {
+      'Content-Type': upstream.headers.get('Content-Type') ?? 'image/png',
+      // セッションに紐づくため共有キャッシュには載せない。
+      'Cache-Control': `private, max-age=${ICON_TTL}`
+    }
+  })
+  await putCachedResponse(cacheKey, response.clone(), ICON_TTL)
+  return response
 })
 
 /** Backlog のレート制限残量。 */

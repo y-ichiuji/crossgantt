@@ -123,7 +123,22 @@ export class BacklogClient {
     return Math.min(MAX_RETRY_WAIT_MS, 500 * 2 ** attempt)
   }
 
+  /**
+   * 画像などのバイナリを取得する。レスポンスをそのまま返す。
+   *
+   * リトライやレート制限の扱いは `get` と同じにしたいが、JSON を前提に
+   * しないため別メソッドにしている。
+   */
+  async getBinary(path: string, params: QueryParams = {}): Promise<Response> {
+    return this.request(path, params, 'image/*')
+  }
+
   async get<T>(path: string, params: QueryParams = {}): Promise<T> {
+    const response = await this.request(path, params, 'application/json')
+    return (await response.json()) as T
+  }
+
+  private async request(path: string, params: QueryParams, accept: string): Promise<Response> {
     const url = this.buildUrl(path, params)
 
     for (let attempt = 0; ; attempt += 1) {
@@ -132,7 +147,7 @@ export class BacklogClient {
       try {
         response = await this.fetchImpl(url, {
           headers: {
-            Accept: 'application/json',
+            Accept: accept,
             Authorization: `Bearer ${this.accessToken}`
           }
         })
@@ -144,7 +159,7 @@ export class BacklogClient {
       this.readRateLimit(response)
 
       if (response.ok) {
-        return (await response.json()) as T
+        return response
       }
 
       const shouldRetry = response.status === 429 || response.status >= 500

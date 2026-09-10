@@ -158,3 +158,62 @@ describe('アクセストークンの自動更新', () => {
     expect(body.error).toContain('ログインし直して')
   })
 })
+
+describe('担当者アイコンの中継', () => {
+  it('Backlog のアイコンをそのまま返す', async () => {
+    const kv = createMemoryKV()
+    const { cookie } = await seedSession(kv)
+    const urls: string[] = []
+
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      urls.push(url)
+      return new Response(new Uint8Array([1, 2, 3]), {
+        status: 200,
+        headers: { 'Content-Type': 'image/png' }
+      })
+    }) as typeof fetch
+
+    const response = await api.request('/users/7/icon', { headers: { Cookie: cookie } }, createEnv(kv))
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('Content-Type')).toBe('image/png')
+    expect(urls[0]).toBe('https://example.backlog.jp/api/v2/users/7/icon')
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(new Uint8Array([1, 2, 3]))
+  })
+
+  it('ブラウザにだけキャッシュさせる', async () => {
+    const kv = createMemoryKV()
+    const { cookie } = await seedSession(kv)
+    globalThis.fetch = vi.fn(
+      async () => new Response(new Uint8Array([1]), { status: 200, headers: { 'Content-Type': 'image/png' } })
+    ) as typeof fetch
+
+    const response = await api.request('/users/7/icon', { headers: { Cookie: cookie } }, createEnv(kv))
+    // 共有キャッシュに載せないよう private を付ける。
+    expect(response.headers.get('Cache-Control')).toContain('private')
+    expect(response.headers.get('Cache-Control')).toContain('max-age=3600')
+  })
+
+  it('ユーザー ID が不正なら 400', async () => {
+    const kv = createMemoryKV()
+    const { cookie } = await seedSession(kv)
+    const response = await api.request('/users/abc/icon', { headers: { Cookie: cookie } }, createEnv(kv))
+    expect(response.status).toBe(400)
+  })
+
+  it('未ログインなら 401', async () => {
+    const kv = createMemoryKV()
+    const response = await api.request('/users/7/icon', {}, createEnv(kv))
+    expect(response.status).toBe(401)
+  })
+
+  it('Content-Type が無ければ image/png とみなす', async () => {
+    const kv = createMemoryKV()
+    const { cookie } = await seedSession(kv)
+    globalThis.fetch = vi.fn(async () => new Response(new Uint8Array([1]), { status: 200 })) as typeof fetch
+
+    const response = await api.request('/users/7/icon', { headers: { Cookie: cookie } }, createEnv(kv))
+    expect(response.headers.get('Content-Type')).toBe('image/png')
+  })
+})
