@@ -1,0 +1,63 @@
+name: Deploy
+
+# main への push だけを本番へ反映する。
+# Git-flow に従い、main へは release / hotfix ブランチのマージ経由で入る。
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: デプロイ前の検証
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+
+  deploy:
+    name: Cloudflare Workers へデプロイ
+    needs: verify
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://crossgantt.y-ichiuji.workers.dev
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: デプロイ
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # ビルド済みの成果物をそのまま上げる。
+          command: deploy
+
+      # 公開直後に、ログイン前でも確認できる範囲を検証する。
+      - name: 公開後のスモークテスト
+        run: node scripts/smoke.mjs https://crossgantt.y-ichiuji.workers.dev

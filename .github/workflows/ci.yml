@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: 静的解析とテスト
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      # package-lock.json どおりに入れる。lock が古ければここで失敗する。
+      - run: npm ci
+
+      - name: 整形の確認
+        run: npm run format:check
+
+      - name: lint（type-aware）
+        run: npm run lint
+
+      # type-aware lint は型エラーを検出しないため、型検査は別に走らせる。
+      - name: 型チェック
+        run: npm run typecheck
+
+      - name: テスト
+        run: npm test
+
+  build:
+    name: ビルド
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - run: npm ci
+
+      - name: ビルド
+        run: npm run build
+
+      # 実際に起動して、ログイン前に確認できる範囲のスモークテストを流す。
+      - name: スモークテスト
+        env:
+          BACKLOG_CLIENT_ID: ci-dummy-client-id
+          BACKLOG_CLIENT_SECRET: ci-dummy-client-secret
+        run: |
+          printf 'BACKLOG_CLIENT_ID=%s\nBACKLOG_CLIENT_SECRET=%s\n' \
+            "$BACKLOG_CLIENT_ID" "$BACKLOG_CLIENT_SECRET" > .dev.vars
+          npx vite preview --port 4173 > preview.log 2>&1 &
+          for _ in $(seq 1 60); do
+            if curl -sf -o /dev/null http://127.0.0.1:4173/; then
+              break
+            fi
+            sleep 1
+          done
+          node scripts/smoke.mjs http://127.0.0.1:4173 || {
+            echo '--- preview.log ---'
+            cat preview.log
+            exit 1
+          }

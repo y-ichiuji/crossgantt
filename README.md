@@ -129,6 +129,43 @@ docs/design.md           設計ドキュメント
 
 中継先のホストは `*.backlog.jp` / `*.backlog.com` / `*.backlogtool.com` に限定しています。これを怠るとアプリが任意ホストへの中継器になってしまうためです。
 
+## CI / CD
+
+GitHub Actions で次を回しています。
+
+| ワークフロー | 契機                                      | 内容                                                                     |
+| ------------ | ----------------------------------------- | ------------------------------------------------------------------------ |
+| `ci.yml`     | `main` / `develop` への push、すべての PR | 整形の確認 → lint → 型チェック → テスト、ビルドとスモークテスト          |
+| `deploy.yml` | `main` への push                          | 検証を通してから Cloudflare Workers へデプロイし、公開後にスモークテスト |
+
+デプロイには次のリポジトリシークレットが必要です。
+
+| シークレット            | 取得元                                                                                        |
+| ----------------------- | --------------------------------------------------------------------------------------------- |
+| `CLOUDFLARE_API_TOKEN`  | Cloudflare ダッシュボード → My Profile → API Tokens → 「Edit Cloudflare Workers」テンプレート |
+| `CLOUDFLARE_ACCOUNT_ID` | `npx wrangler whoami` で確認できる Account ID                                                 |
+
+### ブランチ運用
+
+Git-flow に沿っています。
+
+- `main` — 本番。ここへの push がデプロイの契機になる
+- `develop` — 開発の統合先
+- `feature/*` — 機能開発。`develop` へ `--no-ff` でマージ
+- `release/*` — リリース準備。`main` と `develop` へマージし、`main` にタグを打つ
+- `hotfix/*` — 本番の緊急修正。`main` と `develop` の両方へ戻す
+
+### 依存関係の更新
+
+[Renovate](https://docs.renovatebot.com/) が `develop` に対して PR を作ります（設定は `renovate.json`）。
+
+- 毎週月曜の未明にまとめて更新
+- 脆弱性が見つかった場合は待機期間なしで即座に PR を作成（`security` ラベル付き）
+- devDependencies のパッチ・マイナーと GitHub Actions は CI が通れば自動マージ
+- 本番依存とメジャー更新は必ず人が確認する
+
+有効にするには、リポジトリに [Renovate の GitHub App](https://github.com/apps/renovate) をインストールしてください。
+
 ## 設計の詳細
 
 背景・API 連携の設計・レート制限への対応・残っている検証項目は [`docs/design.md`](docs/design.md) にまとめています。とくに次の 2 点は Backlog API を扱ううえでの勘所です。
