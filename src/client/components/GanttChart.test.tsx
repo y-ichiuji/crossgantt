@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 import { defaultFilter } from '../../shared/filter'
 import { makeIssue, NOW, TODAY } from '../../shared/test-fixtures'
-import type { GanttIssue, ViewFilter } from '../../shared/types'
+import type { GanttIssue, Holiday, ViewFilter } from '../../shared/types'
 import { GanttChart } from './GanttChart'
 
 const FILTER: ViewFilter = { ...defaultFilter(NOW), projectIds: [100] }
@@ -20,13 +20,21 @@ const OTHER_ISSUE = makeIssue({
   assigneeName: '佐藤花子'
 })
 
-function setup(issues: GanttIssue[], filter: Partial<ViewFilter> = {}) {
+// 2026 年 9 月は 21 日が敬老の日、22 日が国民の休日、23 日が秋分の日。
+const HOLIDAYS: Holiday[] = [
+  { dateKey: '2026-09-21', name: '敬老の日' },
+  { dateKey: '2026-09-22', name: '国民の休日' },
+  { dateKey: '2026-09-23', name: '秋分の日' }
+]
+
+function setup(issues: GanttIssue[], filter: Partial<ViewFilter> = {}, holidays: Holiday[] = HOLIDAYS) {
   render(
     <GanttChart
       issues={issues}
       filter={{ ...FILTER, ...filter }}
       today={TODAY}
       projectNames={{ 100: 'PJA プロジェクトA', 200: 'PJB プロジェクトB' }}
+      holidays={holidays}
     />
   )
   return { user: userEvent.setup() }
@@ -205,6 +213,30 @@ describe('目盛りと今日の列', () => {
     // 横スクロールで課題名に重ならないよう、土日と同じ背景レイヤーの子にする。
     expect(weekend).not.toBeNull()
     expect(column?.parentElement).toBe(weekend?.parentElement)
+  })
+
+  const SEPTEMBER = { from: '2026-09-01', to: '2026-09-30' } as const
+
+  it('日ズームでは祝日に帯を出す', () => {
+    setup([makeIssue()], { ...SEPTEMBER, zoom: 'day' })
+    expect(document.querySelectorAll('[data-testid="holiday-band"]')).toHaveLength(3)
+  })
+
+  it('週ズームでは祝日の帯を出さない', () => {
+    setup([makeIssue()], { ...SEPTEMBER, zoom: 'week' })
+    expect(document.querySelectorAll('[data-testid="holiday-band"]')).toHaveLength(0)
+  })
+
+  it('祝日の目盛りに名称を出す', () => {
+    setup([makeIssue()], { ...SEPTEMBER, zoom: 'day' })
+    const marked = [...document.querySelectorAll('[data-holiday="true"]')]
+    expect(marked.map((tick) => tick.getAttribute('title'))).toEqual(['敬老の日', '国民の休日', '秋分の日'])
+  })
+
+  it('祝日を取得できていなければ帯を出さない', () => {
+    setup([makeIssue()], { ...SEPTEMBER, zoom: 'day' }, [])
+    expect(document.querySelectorAll('[data-testid="holiday-band"]')).toHaveLength(0)
+    expect(document.querySelectorAll('[data-holiday="true"]')).toHaveLength(0)
   })
 
   it('ヘッダーの目盛りでも今日を示す', () => {

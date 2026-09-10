@@ -78,26 +78,27 @@ pnpm install
 pnpm dev           # http://localhost:5173
 ```
 
-| コマンド            | 内容                                    |
-| ------------------- | --------------------------------------- |
-| `pnpm dev`          | 開発サーバー                            |
-| `pnpm build`        | 本番ビルド                              |
-| `pnpm preview`      | ビルドしてローカルで確認                |
-| `pnpm deploy`       | Cloudflare Workers へデプロイ           |
-| `pnpm lint`         | oxlint（type-aware ルール込み）         |
-| `pnpm lint:fix`     | oxlint の自動修正                       |
-| `pnpm lint:css`     | stylelint による CSS の検査             |
-| `pnpm lint:css:fix` | stylelint の自動修正                    |
-| `pnpm lint:md`      | markdownlint による Markdown の検査     |
-| `pnpm lint:md:fix`  | markdownlint の自動修正                 |
-| `pnpm lint:actions` | actionlint による GitHub Actions の検査 |
-| `pnpm spellcheck`   | cspell によるスペルチェック             |
-| `pnpm format`       | oxfmt による整形                        |
-| `pnpm format:check` | 整形されているかの確認                  |
-| `pnpm typecheck`    | `tsc --noEmit`                          |
-| `pnpm test`         | Vitest                                  |
-| `pnpm verify`       | 上記の検証をまとめて実行                |
-| `pnpm cf-typegen`   | `wrangler.jsonc` 変更後の型再生成       |
+| コマンド             | 内容                                                          |
+| -------------------- | ------------------------------------------------------------- |
+| `pnpm dev`           | 開発サーバー                                                  |
+| `pnpm build`         | 本番ビルド                                                    |
+| `pnpm preview`       | ビルドしてローカルで確認                                      |
+| `pnpm deploy`        | Cloudflare Workers へデプロイ                                 |
+| `pnpm lint`          | oxlint（type-aware ルール込み）                               |
+| `pnpm lint:fix`      | oxlint の自動修正                                             |
+| `pnpm lint:css`      | stylelint による CSS の検査                                   |
+| `pnpm lint:css:fix`  | stylelint の自動修正                                          |
+| `pnpm lint:md`       | markdownlint による Markdown の検査                           |
+| `pnpm lint:md:fix`   | markdownlint の自動修正                                       |
+| `pnpm lint:actions`  | actionlint による GitHub Actions の検査                       |
+| `pnpm spellcheck`    | cspell によるスペルチェック                                   |
+| `pnpm format`        | oxfmt による整形                                              |
+| `pnpm format:check`  | 整形されているかの確認                                        |
+| `pnpm typecheck`     | `tsc --noEmit`                                                |
+| `pnpm test`          | Vitest                                                        |
+| `pnpm test:holidays` | 祝日の規則計算を内閣府の CSV と突き合わせる（要ネットワーク） |
+| `pnpm verify`        | 上記の検証をまとめて実行                                      |
+| `pnpm cf-typegen`    | `wrangler.jsonc` 変更後の型再生成                             |
 
 サーバーを起動した状態で `node scripts/smoke.mjs` を実行すると、HTML の配信と認証まわりのガードを一通り確認できます。
 

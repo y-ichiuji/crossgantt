@@ -6,13 +6,24 @@ import { summarize } from '../shared/gantt'
 import type {
   GanttIssue,
   IssuesQuery,
+  Holiday,
   MemberSummary,
   ProjectSummary,
   StatusGroup,
   ViewFilter,
   Viewer
 } from '../shared/types'
-import { ApiError, getIssues, getMembers, getProjects, getSession, getStatuses, logout, startLogin } from './api'
+import {
+  ApiError,
+  getHolidays,
+  getIssues,
+  getMembers,
+  getProjects,
+  getSession,
+  getStatuses,
+  logout,
+  startLogin
+} from './api'
 import { FilterBar } from './components/FilterBar'
 import { GanttChart } from './components/GanttChart'
 import { LoginPanel } from './components/LoginPanel'
@@ -93,6 +104,7 @@ export default function App() {
   const [projects, setProjects] = useState<ProjectSummary[]>([])
   const [members, setMembers] = useState<MemberSummary[]>([])
   const [statuses, setStatuses] = useState<StatusGroup[]>([])
+  const [holidays, setHolidays] = useState<Holiday[]>([])
 
   const [issues, setIssues] = useState<GanttIssue[]>([])
   const [truncated, setTruncated] = useState(false)
@@ -285,6 +297,28 @@ export default function App() {
     return () => controller.abort()
   }, [viewer, projectIdsKey, reportError])
 
+  // --- 祝日 ---
+
+  useEffect(() => {
+    if (!viewer) {
+      setHolidays([])
+      return
+    }
+    const controller = new AbortController()
+    const run = async () => {
+      try {
+        setHolidays(await getHolidays(filter.from, filter.to, controller.signal))
+      } catch (error: unknown) {
+        // 祝日の背景が出ないだけなので、画面全体のエラーにはしない。
+        if (!isAbort(error)) {
+          setHolidays([])
+        }
+      }
+    }
+    void run()
+    return () => controller.abort()
+  }, [viewer, filter.from, filter.to])
+
   // --- キーワードのデバウンス ---
 
   useEffect(() => {
@@ -471,7 +505,7 @@ export default function App() {
           <p>プロジェクトを 1 つ以上選択してください。</p>
         </div>
       ) : (
-        <GanttChart issues={issues} filter={filter} today={today} projectNames={projectNames} />
+        <GanttChart issues={issues} filter={filter} today={today} projectNames={projectNames} holidays={holidays} />
       )}
     </div>
   )

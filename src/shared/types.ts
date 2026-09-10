@@ -102,6 +102,13 @@ export type IssuesResponse = {
 }
 
 /** API エラーレスポンスの本文。 */
+/** 祝日 1 日分。 */
+export type Holiday = {
+  /** yyyy-MM-dd */
+  dateKey: string
+  name: string
+}
+
 export type ApiErrorBody = {
   error: string
   detail?: string

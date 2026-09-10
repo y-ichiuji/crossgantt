@@ -53,6 +53,14 @@
   background: var(--weekend);
 }
 
+/* 祝日は稼働日でないことが土日と同じくらい重要なので、少し濃く塗る。 */
+.holiday {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: var(--holiday);
+}
+
 .monthLine {
   position: absolute;
   top: 0;
@@ -118,7 +126,12 @@
   font-size: 11px;
 }
 
-/* ヘッダーは不透明で帯を覆い隠すため、目盛り側でも今日の列を示す。 */
+/* ヘッダーは不透明で帯を覆い隠すため、目盛り側でも祝日と今日の列を示す。 */
+.ticksMinor .tick[data-holiday='true'] {
+  background: var(--holiday);
+  color: var(--holiday-text);
+}
+
 .ticksMinor .tick[data-today='true'] {
   background: var(--today-band);
   color: var(--danger);

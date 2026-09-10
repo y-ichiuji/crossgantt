@@ -7,6 +7,7 @@
 
 import type {
   ApiErrorBody,
+  Holiday,
   IssuesQuery,
   IssuesResponse,
   MemberSummary,
@@ -50,6 +51,12 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
 
   return (await response.json()) as T
+}
+
+/** 表示期間内の日本の祝日。 */
+export async function getHolidays(from: string, to: string, signal?: AbortSignal): Promise<Holiday[]> {
+  const params = new URLSearchParams({ from, to })
+  return request<Holiday[]>(`/api/holidays?${params.toString()}`, { signal })
 }
 
 /** 現在のセッション情報。未ログインなら ApiError(401) を投げる。 */

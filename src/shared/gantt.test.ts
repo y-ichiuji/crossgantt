@@ -6,6 +6,7 @@ import {
   filterByRange,
   groupIssues,
   hasNoDate,
+  holidayBands,
   isOverdue,
   minorTicks,
   monthTicks,
@@ -243,6 +244,43 @@ describe('目盛り', () => {
     const scale = buildScale('2026-09-01', '2026-09-14', 'day')
     expect(weekendBands(scale, 'day')).toHaveLength(4)
     expect(weekendBands(scale, 'week')).toHaveLength(0)
+  })
+})
+
+describe('holidayBands', () => {
+  const GOLDEN_WEEK = [
+    { dateKey: '2026-04-29', name: '昭和の日' },
+    { dateKey: '2026-05-03', name: '憲法記念日' },
+    { dateKey: '2026-05-04', name: 'みどりの日' },
+    { dateKey: '2026-05-05', name: 'こどもの日' },
+    { dateKey: '2026-05-06', name: '振替休日' }
+  ]
+
+  it('日ズームでは祝日を 1 日分の帯にする', () => {
+    const scale = buildScale('2026-04-25', '2026-05-10', 'day')
+    const bands = holidayBands(scale, 'day', GOLDEN_WEEK)
+    expect(bands.map((band) => [band.key, band.label])).toEqual(
+      GOLDEN_WEEK.map((holiday) => [holiday.dateKey, holiday.name])
+    )
+    expect(bands[0].left).toBe(4 * scale.pxPerDay)
+    expect(bands[0].width).toBe(scale.pxPerDay)
+  })
+
+  it('表示期間の外にある祝日は落とす', () => {
+    const scale = buildScale('2026-05-01', '2026-05-10', 'day')
+    const bands = holidayBands(scale, 'day', GOLDEN_WEEK)
+    expect(bands.map((band) => band.key)).toEqual(['2026-05-03', '2026-05-04', '2026-05-05', '2026-05-06'])
+  })
+
+  it('週・月ズームでは出さない', () => {
+    const scale = buildScale('2026-04-25', '2026-05-10', 'week')
+    expect(holidayBands(scale, 'week', GOLDEN_WEEK)).toHaveLength(0)
+    expect(holidayBands(scale, 'month', GOLDEN_WEEK)).toHaveLength(0)
+  })
+
+  it('祝日が無ければ空', () => {
+    const scale = buildScale('2026-06-01', '2026-06-30', 'day')
+    expect(holidayBands(scale, 'day', [])).toHaveLength(0)
   })
 })
 

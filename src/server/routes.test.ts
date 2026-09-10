@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AppBindings } from './auth/config'
 import { getSession } from './auth/session'
+import { resetHolidayMemo } from './holidays'
 import { api } from './routes'
 import { createMemoryKV, jsonResponse, seedSession } from './test-utils'
 
@@ -39,6 +40,69 @@ describe('セッションによる保護', () => {
     const kv = createMemoryKV()
     const response = await api.request('/projects', {}, createEnv(kv))
     expect(response.headers.get('Cache-Control')).toBe('no-store')
+  })
+})
+
+describe('/holidays', () => {
+  let kv: KVNamespace
+  let cookie: string
+
+  beforeEach(async () => {
+    kv = createMemoryKV()
+    const seeded = await seedSession(kv)
+    cookie = seeded.cookie
+    resetHolidayMemo()
+  })
+
+  afterEach(() => resetHolidayMemo())
+
+  it('表示期間内の祝日を返す', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      Response.json({ '2026-09-21': '敬老の日', '2026-09-23': '秋分の日' })
+    ) as unknown as typeof fetch
+
+    const response = await api.request(
+      '/holidays?from=2026-09-01&to=2026-09-30',
+      { headers: { Cookie: cookie } },
+      createEnv(kv)
+    )
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual([
+      { dateKey: '2026-09-21', name: '敬老の日' },
+      { dateKey: '2026-09-23', name: '秋分の日' }
+    ])
+  })
+
+  it('日付が不正なら 400', async () => {
+    const response = await api.request(
+      '/holidays?from=zzz&to=2026-09-30',
+      { headers: { Cookie: cookie } },
+      createEnv(kv)
+    )
+    expect(response.status).toBe(400)
+  })
+
+  it('開始日が終了日より後なら 400', async () => {
+    const response = await api.request(
+      '/holidays?from=2026-09-30&to=2026-09-01',
+      { headers: { Cookie: cookie } },
+      createEnv(kv)
+    )
+    expect(response.status).toBe(400)
+  })
+
+  it('期間が長すぎれば 400', async () => {
+    const response = await api.request(
+      '/holidays?from=2000-01-01&to=2099-12-31',
+      { headers: { Cookie: cookie } },
+      createEnv(kv)
+    )
+    expect(response.status).toBe(400)
+  })
+
+  it('未ログインなら 401', async () => {
+    const response = await api.request('/holidays?from=2026-09-01&to=2026-09-30', {}, createEnv(createMemoryKV()))
+    expect(response.status).toBe(401)
   })
 })
 

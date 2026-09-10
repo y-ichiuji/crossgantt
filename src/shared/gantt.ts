@@ -18,7 +18,7 @@ import {
   startOfWeek,
   toTime
 } from './date'
-import type { GanttIssue, GroupBy, Zoom } from './types'
+import type { GanttIssue, GroupBy, Holiday, Zoom } from './types'
 
 /**
  * バーの種類。
@@ -332,6 +332,27 @@ export function todayBand(scale: TimelineScale, zoom: Zoom, today: string): Time
     left: xOf(visibleStart, scale),
     width: (diffDays(visibleStart, visibleEnd) + 1) * scale.pxPerDay
   }
+}
+
+/**
+ * 祝日の帯（日ズームのときのみ意味を持つ）。
+ *
+ * 祝日の一覧はサーバーから受け取る。`label` に名称を入れており、
+ * 帯そのものは装飾なので読み上げさせないが、ヘッダーの目盛りの
+ * `title` に出して名称が分かるようにする。
+ */
+export function holidayBands(scale: TimelineScale, zoom: Zoom, holidays: readonly Holiday[]): TimelineTick[] {
+  if (zoom !== 'day') {
+    return []
+  }
+  return holidays
+    .filter(({ dateKey }) => dateKey >= scale.from && dateKey <= scale.to)
+    .map(({ dateKey, name }) => ({
+      key: dateKey,
+      label: name,
+      left: xOf(dateKey, scale),
+      width: scale.pxPerDay
+    }))
 }
 
 /** 土日の帯（日ズームのときのみ意味を持つ）。 */
