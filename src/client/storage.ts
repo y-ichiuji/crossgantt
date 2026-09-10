@@ -1,46 +1,31 @@
 /**
- * 接続情報（スペースドメインと API キー）のブラウザ保存。
+ * ブラウザに保存する軽い設定。
  *
- * サーバーには一切保存せず、localStorage にのみ置く。
- * XSS が起きた場合に読み出されうる方式であるため、UI で注意喚起する。
+ * 認証情報は HttpOnly Cookie とサーバー側のセッションで扱うため、
+ * ここに保存するのは「前回入力したスペースドメイン」だけ。
+ * 秘密情報は一切置かない。
  */
 
-import type { Connection } from './api'
+const LAST_SPACE_KEY = 'crossgantt.lastSpace'
 
-const STORAGE_KEY = 'crossgantt.connection.v1'
-
-export function loadConnection(): Connection | null {
+export function loadLastSpace(): string {
   if (typeof localStorage === 'undefined') {
-    return null
+    return ''
   }
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) {
-      return null
-    }
-    const parsed = JSON.parse(raw) as Partial<Connection>
-    if (typeof parsed.space !== 'string' || typeof parsed.apiKey !== 'string') {
-      return null
-    }
-    if (!parsed.space || !parsed.apiKey) {
-      return null
-    }
-    return { space: parsed.space, apiKey: parsed.apiKey }
+    return localStorage.getItem(LAST_SPACE_KEY) ?? ''
   } catch {
-    return null
+    return ''
   }
 }
 
-export function saveConnection(connection: Connection): void {
+export function saveLastSpace(space: string): void {
   if (typeof localStorage === 'undefined') {
     return
   }
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(connection))
-}
-
-export function clearConnection(): void {
-  if (typeof localStorage === 'undefined') {
-    return
+  try {
+    localStorage.setItem(LAST_SPACE_KEY, space)
+  } catch {
+    // プライベートブラウジングなどで書き込めない場合は諦める。
   }
-  localStorage.removeItem(STORAGE_KEY)
 }

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { defaultFilter, defaultRange, fetchKey, filterToParams, parseFilter } from '../src/shared/filter'
+
+import { defaultFilter, defaultRange, fetchKey, filterToParams, parseFilter } from './filter'
+import type { ViewFilter } from './types'
 
 const NOW = Date.parse('2026-09-10T03:00:00Z')
 
@@ -77,11 +79,17 @@ describe('filterToParams', () => {
 describe('fetchKey', () => {
   it('グルーピングとズームの変更では変わらない', () => {
     const base = defaultFilter(NOW)
-    expect(fetchKey({ ...base, groupBy: 'project', zoom: 'day' })).toBe(fetchKey(base))
+    const changed: ViewFilter = { ...base, groupBy: 'project', zoom: 'day' }
+    expect(fetchKey(changed)).toBe(fetchKey(base))
   })
 
   it('取得条件が変われば変わる', () => {
     const base = defaultFilter(NOW)
     expect(fetchKey({ ...base, projectIds: [1] })).not.toBe(fetchKey(base))
+  })
+
+  it('取得条件が同じなら順序が違っても同じキーになる', () => {
+    const base = defaultFilter(NOW)
+    expect(fetchKey({ ...base, projectIds: [1, 2] })).toBe(fetchKey({ ...base, projectIds: [1, 2] }))
   })
 })

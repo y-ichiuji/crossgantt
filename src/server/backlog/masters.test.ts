@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import type { BacklogStatus } from '../src/server/backlog/api-types'
-import { groupStatuses, resolveStatusIds } from '../src/server/backlog/masters'
+
+import type { BacklogStatus } from './api-types'
+import { groupStatuses, resolveStatusIds } from './masters'
 
 function status(id: number, projectId: number, name: string, displayOrder: number): BacklogStatus {
   return { id, projectId, name, color: '#ed8077', displayOrder }

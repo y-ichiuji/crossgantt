@@ -1,0 +1,126 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "import", "promise", "react", "jsx-a11y", "vitest"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "warn"
+  },
+  "env": {
+    "browser": true,
+    "es2024": true
+  },
+  "ignorePatterns": ["dist/**", ".wrangler/**", "public/**", "worker-configuration.d.ts", "skills/**"],
+  "rules": {
+    "no-console": [
+      "error",
+      {
+        "allow": ["error", "warn"]
+      }
+    ],
+    "typescript/no-explicit-any": "error",
+    "typescript/no-non-null-assertion": "error",
+    "typescript/consistent-type-imports": [
+      "error",
+      {
+        "prefer": "type-imports"
+      }
+    ],
+    "typescript/switch-exhaustiveness-check": "error",
+    "typescript/await-thenable": "error",
+    "typescript/no-floating-promises": "error",
+    "typescript/no-misused-promises": "error",
+    "typescript/require-await": "error",
+    "typescript/no-array-delete": "error",
+    "typescript/no-base-to-string": "error",
+    "typescript/no-duplicate-type-constituents": "error",
+    "typescript/no-for-in-array": "error",
+    "typescript/no-implied-eval": "error",
+    "typescript/no-meaningless-void-operator": "error",
+    "typescript/no-mixed-enums": "error",
+    "typescript/no-redundant-type-constituents": "error",
+    "typescript/no-unnecessary-boolean-literal-compare": "error",
+    "typescript/no-unnecessary-template-expression": "error",
+    "typescript/no-unnecessary-type-arguments": "error",
+    "typescript/no-unnecessary-type-assertion": "error",
+    "typescript/no-unsafe-argument": "error",
+    "typescript/no-unsafe-assignment": "error",
+    "typescript/no-unsafe-call": "error",
+    "typescript/no-unsafe-enum-comparison": "error",
+    "typescript/no-unsafe-member-access": "error",
+    "typescript/no-unsafe-return": "error",
+    "typescript/no-unsafe-unary-minus": "error",
+    "typescript/non-nullable-type-assertion-style": "error",
+    "typescript/prefer-promise-reject-errors": "error",
+    "typescript/prefer-reduce-type-parameter": "error",
+    "typescript/prefer-return-this-type": "error",
+    "typescript/related-getter-setter-pairs": "error",
+    "typescript/require-array-sort-compare": "error",
+    "typescript/restrict-plus-operands": "error",
+    "typescript/restrict-template-expressions": [
+      "error",
+      {
+        "allowNumber": true,
+        "allowBoolean": false,
+        "allowNullish": false
+      }
+    ],
+    "typescript/return-await": ["error", "in-try-catch"],
+    "typescript/unbound-method": "error",
+    "typescript/use-unknown-in-catch-callback-variable": "error",
+    "typescript/no-unnecessary-condition": "warn",
+    "typescript/no-unsafe-type-assertion": "off",
+    "typescript/prefer-readonly-parameter-types": "off",
+    "typescript/no-confusing-void-expression": "off",
+    "typescript/strict-boolean-expressions": "off",
+    "unicorn/filename-case": "off",
+    "unicorn/no-null": "off",
+    "import/no-cycle": "error",
+    "import/no-self-import": "error",
+    "promise/prefer-await-to-then": "off",
+    "react/jsx-no-target-blank": [
+      "error",
+      {
+        "allowReferrer": false
+      }
+    ],
+    "react/react-in-jsx-scope": "off",
+    "typescript/consistent-return": "off",
+    "react/set-state-in-effect": "off",
+    "no-await-in-loop": "off"
+  },
+  "overrides": [
+    {
+      "files": ["**/*.test.ts", "**/*.test.tsx", "**/test-utils.ts"],
+      "rules": {
+        "typescript/no-unsafe-assignment": "off",
+        "typescript/no-unsafe-argument": "off",
+        "typescript/no-unsafe-member-access": "off",
+        "typescript/no-unsafe-call": "off",
+        "typescript/no-unsafe-return": "off",
+        "typescript/no-unnecessary-condition": "off",
+        "typescript/no-explicit-any": "off",
+        "typescript/unbound-method": "off",
+        "typescript/require-await": "off",
+        "vitest/require-mock-type-parameters": "off",
+        "typescript/no-unnecessary-type-assertion": "off",
+        "typescript/non-nullable-type-assertion-style": "off",
+        "typescript/no-base-to-string": "off",
+        "unicorn/consistent-function-scoping": "off"
+      }
+    },
+    {
+      "files": ["scripts/**/*.mjs"],
+      "rules": {
+        "no-console": "off",
+        "typescript/no-unsafe-assignment": "off",
+        "typescript/no-unsafe-argument": "off",
+        "typescript/no-unsafe-member-access": "off",
+        "typescript/no-unsafe-call": "off",
+        "typescript/no-unsafe-return": "off",
+        "typescript/no-base-to-string": "off",
+        "typescript/restrict-template-expressions": "off"
+      }
+    }
+  ]
+}

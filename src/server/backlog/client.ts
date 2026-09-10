@@ -1,9 +1,9 @@
 /**
  * Backlog API v2 クライアント。
  *
- * - API キーは常にクエリパラメータで送る（Backlog はヘッダー認証に対応していないため）
+ * - 認証は OAuth 2.0 のアクセストークンを `Authorization: Bearer` で送る
  * - レート制限ヘッダーを記録し、429 を受けたら待機してリトライする
- * - エラーメッセージに API キーが混入しないよう必ずマスクする
+ * - エラーメッセージにアクセストークンが混入しないよう必ずマスクする
  */
 
 import type { BacklogRateLimitEntry } from './api-types'
@@ -25,7 +25,7 @@ export class BacklogApiError extends Error {
 
 export type BacklogClientOptions = {
   space: string
-  apiKey: string
+  accessToken: string
   fetchImpl?: typeof fetch
   /** 429 / 5xx に対するリトライ回数の上限。 */
   maxRetries?: number
@@ -47,7 +47,7 @@ const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(r
 
 export class BacklogClient {
   readonly space: string
-  private readonly apiKey: string
+  private readonly accessToken: string
   private readonly fetchImpl: typeof fetch
   private readonly maxRetries: number
   private readonly sleep: (ms: number) => Promise<void>
@@ -60,7 +60,7 @@ export class BacklogClient {
 
   constructor(options: BacklogClientOptions) {
     this.space = options.space
-    this.apiKey = options.apiKey
+    this.accessToken = options.accessToken
     // グローバルの fetch をそのままプロパティに持たせると `this.fetchImpl(...)` の
     // 呼び出しで this がこのインスタンスになり、Workers では Illegal invocation になる。
     // 受け取った実装をそのまま使う場合も含め、必ず globalThis へ束縛しておく。
@@ -70,12 +70,12 @@ export class BacklogClient {
     this.now = options.now ?? (() => Date.now())
   }
 
-  /** API キーが外部に漏れないようメッセージからマスクする。 */
+  /** アクセストークンが外部に漏れないようメッセージからマスクする。 */
   private mask(text: string): string {
-    if (!this.apiKey) {
+    if (!this.accessToken) {
       return text
     }
-    return text.split(this.apiKey).join('***')
+    return text.split(this.accessToken).join('***')
   }
 
   private buildUrl(path: string, params: QueryParams): string {
@@ -92,7 +92,6 @@ export class BacklogClient {
       }
       url.searchParams.append(key, String(value))
     }
-    url.searchParams.append('apiKey', this.apiKey)
     return url.toString()
   }
 
@@ -132,7 +131,10 @@ export class BacklogClient {
       let response: Response
       try {
         response = await this.fetchImpl(url, {
-          headers: { Accept: 'application/json' }
+          headers: {
+            Accept: 'application/json',
+            Authorization: `Bearer ${this.accessToken}`
+          }
         })
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : String(cause)
@@ -165,7 +167,7 @@ function describeStatus(status: number): string {
     case 400:
       return 'Backlog へのリクエストが不正です'
     case 401:
-      return 'API キーが正しくありません'
+      return 'Backlog の認証が切れています。ログインし直してください'
     case 403:
       return 'この操作を行う権限がありません'
     case 404:
@@ -188,11 +190,11 @@ export async function mapWithConcurrency<T, R>(
   limit: number,
   fn: (item: T, index: number) => Promise<R>
 ): Promise<R[]> {
-  const results = new Array<R>(items.length)
+  const results = Array.from({ length: items.length }) as R[]
   let cursor = 0
 
   const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
-    while (true) {
+    for (;;) {
       const index = cursor
       cursor += 1
       if (index >= items.length) {

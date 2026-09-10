@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { BacklogIssue } from '../src/server/backlog/api-types'
-import { BacklogClient } from '../src/server/backlog/client'
-import { buildDateQueries, fetchGanttIssues, isClosedStatus, normalizeIssue } from '../src/server/backlog/issues'
+
+import type { BacklogIssue } from './api-types'
+import { BacklogClient } from './client'
+import { buildDateQueries, fetchGanttIssues, isClosedStatus, normalizeIssue } from './issues'
 
 const SPACE = 'example.backlog.jp'
 
@@ -93,7 +94,7 @@ describe('normalizeIssue', () => {
 /** URL に応じた応答を返すモック fetch を作る。 */
 function makeFetchMock(handler: (url: URL) => unknown) {
   return vi.fn(async (input: RequestInfo | URL) => {
-    const url = new URL(String(input))
+    const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url)
     return new Response(JSON.stringify(handler(url)), {
       status: 200,
       headers: { 'Content-Type': 'application/json' }
@@ -104,7 +105,7 @@ function makeFetchMock(handler: (url: URL) => unknown) {
 describe('fetchGanttIssues', () => {
   it('プロジェクト未選択なら Backlog を呼ばない', async () => {
     const fetchImpl = makeFetchMock(() => ({}))
-    const client = new BacklogClient({ space: SPACE, apiKey: 'key', fetchImpl })
+    const client = new BacklogClient({ space: SPACE, accessToken: 'key', fetchImpl })
     const result = await fetchGanttIssues(
       client,
       {},
@@ -136,7 +137,7 @@ describe('fetchGanttIssues', () => {
       }
       return [makeRawIssue({ id: 1, issueKey: 'PJA-1' })]
     })
-    const client = new BacklogClient({ space: SPACE, apiKey: 'key', fetchImpl })
+    const client = new BacklogClient({ space: SPACE, accessToken: 'key', fetchImpl })
 
     const result = await fetchGanttIssues(
       client,
@@ -152,7 +153,7 @@ describe('fetchGanttIssues', () => {
       }
     )
 
-    expect(result.issues.map((issue) => issue.id).sort()).toEqual([1, 2])
+    expect(result.issues.map((issue) => issue.id).toSorted((a, b) => a - b)).toEqual([1, 2])
     expect(result.truncated).toBe(false)
     // 3 クエリ × (件数 1 回 + ページ 1 回)
     expect(client.requestCount).toBe(6)
@@ -160,7 +161,7 @@ describe('fetchGanttIssues', () => {
 
   it('件数が 0 のクエリではページ取得をしない', async () => {
     const fetchImpl = makeFetchMock((url) => (url.pathname.endsWith('/issues/count') ? { count: 0 } : []))
-    const client = new BacklogClient({ space: SPACE, apiKey: 'key', fetchImpl })
+    const client = new BacklogClient({ space: SPACE, accessToken: 'key', fetchImpl })
 
     await fetchGanttIssues(
       client,
@@ -194,7 +195,7 @@ describe('fetchGanttIssues', () => {
       // 日付条件なしのクエリには日付ありの課題も混ざって返る。
       return [makeRawIssue({ id: 1 }), makeRawIssue({ id: 99, issueKey: 'PJA-99', startDate: null, dueDate: null })]
     })
-    const client = new BacklogClient({ space: SPACE, apiKey: 'key', fetchImpl })
+    const client = new BacklogClient({ space: SPACE, accessToken: 'key', fetchImpl })
 
     const result = await fetchGanttIssues(
       client,
@@ -210,7 +211,7 @@ describe('fetchGanttIssues', () => {
       }
     )
 
-    const ids = result.issues.map((issue) => issue.id).sort((a, b) => a - b)
+    const ids = result.issues.map((issue) => issue.id).toSorted((a, b) => a - b)
     expect(ids).toEqual([1, 99])
   })
 
@@ -222,7 +223,7 @@ describe('fetchGanttIssues', () => {
       const offset = Number(url.searchParams.get('offset') ?? 0)
       return [makeRawIssue({ id: offset + 1, issueKey: `PJA-${offset + 1}` })]
     })
-    const client = new BacklogClient({ space: SPACE, apiKey: 'key', fetchImpl })
+    const client = new BacklogClient({ space: SPACE, accessToken: 'key', fetchImpl })
 
     const result = await fetchGanttIssues(
       client,

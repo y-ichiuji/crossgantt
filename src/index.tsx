@@ -1,10 +1,16 @@
 import { Hono } from 'hono'
 import { renderToReadableStream } from 'react-dom/server'
 import { Link, ReactRefresh, Script, ViteClient } from 'vite-ssr-components/react'
+
+import type { AppBindings } from './server/auth/config'
+import { auth } from './server/auth/routes'
 import { api } from './server/routes'
 
-const app = new Hono<{ Bindings: CloudflareBindings }>()
+const app = new Hono<{ Bindings: AppBindings }>()
 
+// 認証まわりはセッションを持たない状態でも通す必要があるため、
+// セッション必須のプロキシ API より先にマウントする。
+app.route('/api/auth', auth)
 app.route('/api', api)
 
 app.get('*', async (c) => {

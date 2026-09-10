@@ -6,5 +6,17 @@
   "compatibility_flags": ["nodejs_compat"],
   "observability": {
     "enabled": true
-  }
+  },
+  // OAuth のセッションと state を保存する。
+  // KV の値は暗号化されないため、保持するのは有効期限付きのトークンだけに留める。
+  "kv_namespaces": [
+    {
+      "binding": "SESSIONS",
+      "id": "3477a2f236b141dd9100e6772961c1e6"
+    }
+  ]
+  // クライアント ID とシークレットはリポジトリに含めず、シークレットとして設定する。
+  //   npx wrangler secret put BACKLOG_CLIENT_ID
+  //   npx wrangler secret put BACKLOG_CLIENT_SECRET
+  // ローカル開発では .dev.vars に置く（.gitignore 済み）。
 }

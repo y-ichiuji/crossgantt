@@ -26,7 +26,7 @@ export async function fetchProjects(client: BacklogClient): Promise<ProjectSumma
   const projects = await client.get<BacklogProject[]>('/projects', { archived: false })
   return projects
     .map((project) => ({ id: project.id, projectKey: project.projectKey, name: project.name }))
-    .sort((a, b) => a.name.localeCompare(b.name, 'ja'))
+    .toSorted((a, b) => a.name.localeCompare(b.name, 'ja'))
 }
 
 /**
@@ -50,7 +50,7 @@ export async function fetchMembers(client: BacklogClient, projectIds: number[]):
       byId.set(user.id, { id: user.id, name: user.name })
     }
   }
-  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name, 'ja'))
+  return [...byId.values()].toSorted((a, b) => a.name.localeCompare(b.name, 'ja'))
 }
 
 /**
@@ -88,7 +88,7 @@ export function groupStatuses(statuses: BacklogStatus[]): StatusGroup[] {
     byName.set(status.name, {
       group: {
         name: status.name,
-        color: status.color ?? null,
+        color: status.color,
         ids: [status.id],
         isClosed: isClosedStatus(status)
       },
@@ -97,9 +97,9 @@ export function groupStatuses(statuses: BacklogStatus[]): StatusGroup[] {
   }
 
   return [...byName.values()]
-    .sort((a, b) => a.order - b.order || a.group.name.localeCompare(b.group.name, 'ja'))
+    .toSorted((a, b) => a.order - b.order || a.group.name.localeCompare(b.group.name, 'ja'))
     .map((entry) => {
-      entry.group.ids.sort((a, b) => a - b)
+      entry.group.ids = entry.group.ids.toSorted((a, b) => a - b)
       return entry.group
     })
 }
@@ -114,5 +114,5 @@ export function resolveStatusIds(groups: StatusGroup[], selectedNames: string[],
       ids.add(id)
     }
   }
-  return [...ids].sort((a, b) => a - b)
+  return [...ids].toSorted((a, b) => a - b)
 }

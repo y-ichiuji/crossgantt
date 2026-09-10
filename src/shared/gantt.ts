@@ -160,9 +160,9 @@ export function groupIssues(
 
   const groups = [...buckets.values()]
   for (const group of groups) {
-    group.issues.sort(compareIssues)
+    group.issues = group.issues.toSorted(compareIssues)
   }
-  return groups.sort(compareGroups)
+  return groups.toSorted(compareGroups)
 }
 
 // --- サマリー ---

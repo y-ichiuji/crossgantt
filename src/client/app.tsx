@@ -1,20 +1,42 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+
 import { todayKey } from '../shared/date'
-import { fetchKey, filterToParams, parseFilter } from '../shared/filter'
+import { filterToParams, parseFilter } from '../shared/filter'
 import { summarize } from '../shared/gantt'
-import type { GanttIssue, MemberSummary, ProjectSummary, StatusGroup, Viewer, ViewFilter } from '../shared/types'
-import { ApiError, type Connection, connect, getIssues, getMembers, getProjects, getStatuses } from './api'
-import { ConnectPanel } from './components/ConnectPanel'
+import type {
+  GanttIssue,
+  IssuesQuery,
+  MemberSummary,
+  ProjectSummary,
+  StatusGroup,
+  ViewFilter,
+  Viewer
+} from '../shared/types'
+import { ApiError, getIssues, getMembers, getProjects, getSession, getStatuses, logout, startLogin } from './api'
 import { FilterBar } from './components/FilterBar'
 import { GanttChart } from './components/GanttChart'
+import { LoginPanel } from './components/LoginPanel'
 import { SummaryBar } from './components/SummaryBar'
-import { clearConnection, loadConnection, saveConnection } from './storage'
+import { loadLastSpace, saveLastSpace } from './storage'
 
 /** 初回表示時に自動選択するプロジェクト数の上限。多すぎると初回取得が重くなるため。 */
 const AUTO_SELECT_LIMIT = 5
 
 /** キーワード入力を取得リクエストへ反映するまでの待ち時間。 */
 const KEYWORD_DEBOUNCE_MS = 400
+
+/** 「コピーしました」の表示を戻すまでの時間。 */
+const COPIED_FEEDBACK_MS = 1500
+
+/** 認可フローが失敗したときに URL へ付く理由コードの説明。 */
+const AUTH_ERROR_MESSAGES: Record<string, string> = {
+  missing_code: '認可コードを受け取れませんでした。もう一度ログインしてください。',
+  state_mismatch: '認可リクエストの照合に失敗しました。もう一度ログインしてください。',
+  state_expired: '認可の有効期限が切れました。もう一度ログインしてください。',
+  token_exchange_failed: 'アクセストークンの取得に失敗しました。もう一度ログインしてください。',
+  not_configured: 'このアプリの OAuth 設定が未完了です。管理者に連絡してください。',
+  access_denied: 'Backlog へのアクセスが許可されませんでした。'
+}
 
 function toMessage(error: unknown): string {
   if (error instanceof ApiError) {
@@ -31,12 +53,34 @@ function isAbort(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError'
 }
 
+/** カンマ区切りに畳んだ ID キーを配列へ戻す。 */
+function parseIdsKey(key: string): number[] {
+  return key === '' ? [] : key.split(',').map(Number)
+}
+
+/** コールバックが付けた auth_error を読み取り、URL からは取り除く。 */
+function consumeAuthError(): string | null {
+  if (typeof window === 'undefined') {
+    return null
+  }
+  const params = new URLSearchParams(window.location.search)
+  const code = params.get('auth_error')
+  if (!code) {
+    return null
+  }
+  params.delete('auth_error')
+  const search = params.toString()
+  window.history.replaceState(null, '', `${window.location.pathname}${search === '' ? '' : `?${search}`}`)
+  return AUTH_ERROR_MESSAGES[code] ?? `ログインに失敗しました（${code}）`
+}
+
 export default function App() {
-  const [connection, setConnection] = useState<Connection | null>(() => loadConnection())
   const [viewer, setViewer] = useState<Viewer | null>(null)
-  const [connecting, setConnecting] = useState(false)
-  const [connectError, setConnectError] = useState<string | null>(null)
-  const [showConnectPanel, setShowConnectPanel] = useState(false)
+  /** セッション確認が終わるまでは画面を確定させない。 */
+  const [sessionChecked, setSessionChecked] = useState(false)
+  const [loggingIn, setLoggingIn] = useState(false)
+  const [authError, setAuthError] = useState<string | null>(() => consumeAuthError())
+  const [showLoginPanel, setShowLoginPanel] = useState(false)
 
   const [filter, setFilter] = useState<ViewFilter>(() =>
     parseFilter(new URLSearchParams(typeof window === 'undefined' ? '' : window.location.search))
@@ -53,6 +97,7 @@ export default function App() {
   const [fetchedAt, setFetchedAt] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [copied, setCopied] = useState(false)
 
   /** 再読込ボタンでキャッシュを無視するためのカウンタ。 */
   const [reloadToken, setReloadToken] = useState(0)
@@ -66,82 +111,104 @@ export default function App() {
       const next = { ...prev, ...patch }
       // 期間が逆転しないように補正する。
       if (next.to < next.from) {
-        if (patch.from !== undefined) {
-          next.to = next.from
-        } else {
+        if (patch.from === undefined) {
           next.from = next.to
+        } else {
+          next.to = next.from
         }
       }
       return next
     })
   }, [])
 
-  // --- 接続 ---
-
-  const handleConnect = useCallback((candidate: Connection) => {
-    setConnecting(true)
-    setConnectError(null)
-    connect(candidate)
-      .then((result) => {
-        saveConnection(candidate)
-        setConnection(candidate)
-        setViewer(result)
-        setShowConnectPanel(false)
-      })
-      .catch((error: unknown) => {
-        setConnectError(toMessage(error))
-      })
-      .finally(() => setConnecting(false))
-  }, [])
-
-  const handleDisconnect = useCallback(() => {
-    clearConnection()
-    setConnection(null)
+  /** 401 を受けたらセッションを捨ててログイン画面へ戻す。 */
+  const handleAuthFailure = useCallback((message: string) => {
     setViewer(null)
-    setProjects([])
-    setMembers([])
-    setStatuses([])
-    setIssues([])
-    setFetchedAt(null)
-    setShowConnectPanel(false)
+    setShowLoginPanel(true)
+    setAuthError(message)
   }, [])
 
-  // 保存済みの接続情報を起動時に検証する。
-  useEffect(() => {
-    if (!connection || viewer) {
-      return
+  const reportError = useCallback(
+    (error: unknown) => {
+      if (error instanceof ApiError && error.isUnauthorized) {
+        handleAuthFailure(error.message)
+        return
+      }
+      setLoadError(toMessage(error))
+    },
+    [handleAuthFailure]
+  )
+
+  // --- 認証 ---
+
+  const handleLogin = useCallback((space: string) => {
+    setLoggingIn(true)
+    setAuthError(null)
+    saveLastSpace(space)
+    startLogin(space)
+  }, [])
+
+  const handleLogout = useCallback(() => {
+    const run = async () => {
+      try {
+        await logout()
+      } catch (error: unknown) {
+        // ログアウトの失敗は致命的ではないため、画面上はログアウト扱いにする。
+        console.warn('logout failed', error)
+      }
+      setViewer(null)
+      setProjects([])
+      setMembers([])
+      setStatuses([])
+      setIssues([])
+      setFetchedAt(null)
+      setShowLoginPanel(false)
+      setAuthError(null)
     }
+    void run()
+  }, [])
+
+  // 起動時にセッションの有無を確認する。
+  useEffect(() => {
     const controller = new AbortController()
-    setConnecting(true)
-    connect(connection, controller.signal)
-      .then((result) => setViewer(result))
-      .catch((error: unknown) => {
+    const run = async () => {
+      try {
+        setViewer(await getSession(controller.signal))
+      } catch (error: unknown) {
         if (isAbort(error)) {
           return
         }
-        setConnectError(toMessage(error))
-        setShowConnectPanel(true)
-      })
-      .finally(() => setConnecting(false))
+        if (!(error instanceof ApiError && error.isUnauthorized)) {
+          setLoadError(toMessage(error))
+        }
+        setViewer(null)
+      } finally {
+        setSessionChecked(true)
+      }
+    }
+    void run()
     return () => controller.abort()
-  }, [connection, viewer])
+  }, [])
 
   // --- マスタ取得 ---
 
   useEffect(() => {
-    if (!connection || !viewer) {
+    if (!viewer) {
       return
     }
     const controller = new AbortController()
-    getProjects(connection, false, controller.signal)
-      .then(setProjects)
-      .catch((error: unknown) => {
+    const run = async () => {
+      try {
+        setProjects(await getProjects(false, controller.signal))
+      } catch (error: unknown) {
         if (!isAbort(error)) {
-          setLoadError(toMessage(error))
+          reportError(error)
         }
-      })
+      }
+    }
+    void run()
     return () => controller.abort()
-  }, [connection, viewer])
+  }, [viewer, reportError])
 
   // プロジェクト未選択のまま開かれた場合は、先頭のいくつかを自動選択する。
   useEffect(() => {
@@ -152,32 +219,36 @@ export default function App() {
     patchFilter({ projectIds: projects.slice(0, AUTO_SELECT_LIMIT).map((project) => project.id) })
   }, [projects, filter.projectIds.length, patchFilter])
 
+  // 依存配列をプリミティブだけで表現するため、配列はカンマ区切りのキーに畳む。
   const projectIdsKey = filter.projectIds.join(',')
+  const assigneeIdsKey = filter.assigneeIds.join(',')
+  const statusNamesKey = filter.statusNames.join(',')
 
   useEffect(() => {
-    if (!connection || !viewer || filter.projectIds.length === 0) {
+    if (!viewer || projectIdsKey === '') {
       setMembers([])
       setStatuses([])
       return
     }
     const controller = new AbortController()
-    const ids = projectIdsKey.split(',').map(Number)
-    Promise.all([
-      getMembers(connection, ids, false, controller.signal),
-      getStatuses(connection, ids, false, controller.signal)
-    ])
-      .then(([memberList, statusList]) => {
+    const ids = parseIdsKey(projectIdsKey)
+    const run = async () => {
+      try {
+        const [memberList, statusList] = await Promise.all([
+          getMembers(ids, false, controller.signal),
+          getStatuses(ids, false, controller.signal)
+        ])
         setMembers(memberList)
         setStatuses(statusList)
-      })
-      .catch((error: unknown) => {
+      } catch (error: unknown) {
         if (!isAbort(error)) {
-          setLoadError(toMessage(error))
+          reportError(error)
         }
-      })
+      }
+    }
+    void run()
     return () => controller.abort()
-    // projectIdsKey で依存を表現しているため filter.projectIds 自体は依存に含めない。
-  }, [connection, viewer, projectIdsKey, filter.projectIds.length])
+  }, [viewer, projectIdsKey, reportError])
 
   // --- キーワードのデバウンス ---
 
@@ -188,52 +259,70 @@ export default function App() {
 
   // --- 課題取得 ---
 
-  const requestFilter = useMemo<ViewFilter>(
-    () => ({ ...filter, keyword: debouncedKeyword }),
-    [filter, debouncedKeyword]
-  )
-  const requestKey = fetchKey(requestFilter)
-
   /**
-   * 取得条件は requestKey に集約している。requestFilter そのものを依存に入れると、
-   * グルーピングやズームの変更（サーバーへの再取得が不要な操作）でも再取得が走るため、
-   * 値の受け渡しには ref を使う。
+   * 取得条件だけを取り出したオブジェクト。
+   *
+   * グルーピング軸やズームを変えただけで再取得が走らないよう、
+   * 依存はプリミティブに畳んだキーだけで表現している。
    */
-  const requestFilterRef = useRef(requestFilter)
-  requestFilterRef.current = requestFilter
+  const query = useMemo<IssuesQuery>(
+    () => ({
+      projectIds: parseIdsKey(projectIdsKey),
+      assigneeIds: parseIdsKey(assigneeIdsKey),
+      statusNames: statusNamesKey === '' ? [] : statusNamesKey.split(','),
+      from: filter.from,
+      to: filter.to,
+      keyword: debouncedKeyword,
+      includeClosed: filter.includeClosed,
+      includeNoDate: filter.includeNoDate
+    }),
+    [
+      projectIdsKey,
+      assigneeIdsKey,
+      statusNamesKey,
+      filter.from,
+      filter.to,
+      debouncedKeyword,
+      filter.includeClosed,
+      filter.includeNoDate
+    ]
+  )
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: requestKey と reloadToken は取得条件の変化と再読込操作を表すトリガーとして意図的に依存へ入れている
   useEffect(() => {
-    const target = requestFilterRef.current
-    if (!connection || !viewer || target.projectIds.length === 0) {
+    if (!viewer || query.projectIds.length === 0) {
       setIssues([])
       setFetchedAt(null)
       return
     }
     const controller = new AbortController()
-    const bypass = bypassCacheRef.current
+    // reloadToken は「再読込」ボタンのたびに増える。同じ条件でも取得をやり直すための
+    // トリガーであり、キャッシュを無視するのはこのボタン経由のときだけ。
+    const bypass = reloadToken > 0 && bypassCacheRef.current
     bypassCacheRef.current = false
 
-    setLoading(true)
-    setLoadError(null)
-    getIssues(connection, target, bypass, controller.signal)
-      .then((response) => {
+    const run = async () => {
+      setLoading(true)
+      setLoadError(null)
+      try {
+        const response = await getIssues(query, bypass, controller.signal)
         setIssues(response.issues)
         setTruncated(response.truncated)
         setRequestCount(response.requestCount)
         setFetchedAt(response.fetchedAt)
-      })
-      .catch((error: unknown) => {
+      } catch (error: unknown) {
         if (isAbort(error)) {
           return
         }
-        setLoadError(toMessage(error))
+        reportError(error)
         setIssues([])
-      })
-      .finally(() => setLoading(false))
+      } finally {
+        setLoading(false)
+      }
+    }
+    void run()
 
     return () => controller.abort()
-  }, [connection, viewer, requestKey, reloadToken])
+  }, [viewer, query, reloadToken, reportError])
 
   // --- URL 同期 ---
 
@@ -241,9 +330,8 @@ export default function App() {
     if (typeof window === 'undefined') {
       return
     }
-    const params = filterToParams(filter)
-    const query = params.toString()
-    const next = `${window.location.pathname}${query ? `?${query}` : ''}`
+    const search = filterToParams(filter).toString()
+    const next = `${window.location.pathname}${search === '' ? '' : `?${search}`}`
     window.history.replaceState(null, '', next)
   }, [filter])
 
@@ -252,15 +340,17 @@ export default function App() {
     setReloadToken((value) => value + 1)
   }, [])
 
-  const [copied, setCopied] = useState(false)
   const handleCopyUrl = useCallback(() => {
-    navigator.clipboard
-      .writeText(window.location.href)
-      .then(() => {
+    const run = async () => {
+      try {
+        await navigator.clipboard.writeText(window.location.href)
         setCopied(true)
-        setTimeout(() => setCopied(false), 1500)
-      })
-      .catch(() => setLoadError('URL のコピーに失敗しました'))
+        setTimeout(() => setCopied(false), COPIED_FEEDBACK_MS)
+      } catch {
+        setLoadError('URL のコピーに失敗しました')
+      }
+    }
+    void run()
   }, [])
 
   const projectNames = useMemo(() => {
@@ -276,14 +366,18 @@ export default function App() {
     [issues, filter.from, filter.to, today]
   )
 
-  if (!connection || showConnectPanel) {
+  if (!sessionChecked) {
+    return <output className="app-loading">読み込み中…</output>
+  }
+
+  if (!viewer || showLoginPanel) {
     return (
-      <ConnectPanel
-        initial={connection}
-        onSubmit={handleConnect}
-        onCancel={connection && viewer ? () => setShowConnectPanel(false) : undefined}
-        connecting={connecting}
-        error={connectError}
+      <LoginPanel
+        initialSpace={viewer?.space ?? loadLastSpace()}
+        onSubmit={handleLogin}
+        onCancel={viewer ? () => setShowLoginPanel(false) : undefined}
+        submitting={loggingIn}
+        error={authError}
       />
     )
   }
@@ -298,7 +392,7 @@ export default function App() {
           <div>
             <h1 className="app__title">CrossGantt for Backlog</h1>
             <p className="app__space">
-              {viewer ? `${viewer.space} / ${viewer.name}` : connecting ? '接続中…' : connection.space}
+              {viewer.space} / {viewer.name}
             </p>
           </div>
         </div>
@@ -309,11 +403,8 @@ export default function App() {
           <button type="button" className="button" onClick={handleCopyUrl}>
             {copied ? 'コピーしました' : 'URL をコピー'}
           </button>
-          <button type="button" className="button" onClick={() => setShowConnectPanel(true)}>
-            接続設定
-          </button>
-          <button type="button" className="button" onClick={handleDisconnect}>
-            切断
+          <button type="button" className="button" onClick={handleLogout}>
+            ログアウト
           </button>
         </div>
       </header>

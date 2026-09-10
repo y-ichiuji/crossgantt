@@ -29,9 +29,9 @@ export function SummaryBar({ summary, truncated, requestCount, fetchedAt, loadin
       <span className="summary__item summary__item--muted">取得 {summary.total} 件</span>
 
       {truncated ? (
-        <span className="summary__warning" role="status">
+        <output className="summary__warning">
           件数が多いため一部のみ表示しています。期間やプロジェクトを絞り込んでください。
-        </span>
+        </output>
       ) : null}
 
       <span className="summary__spacer" />

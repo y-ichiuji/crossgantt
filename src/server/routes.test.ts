@@ -1,0 +1,160 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import type { AppBindings } from './auth/config'
+import { getSession } from './auth/session'
+import { api } from './routes'
+import { createMemoryKV, jsonResponse, seedSession } from './test-utils'
+
+const originalFetch = globalThis.fetch
+
+function createEnv(kv: KVNamespace): AppBindings {
+  return {
+    SESSIONS: kv,
+    BACKLOG_CLIENT_ID: 'test-client-id',
+    BACKLOG_CLIENT_SECRET: 'test-client-secret'
+  } as AppBindings
+}
+
+afterEach(() => {
+  globalThis.fetch = originalFetch
+  vi.restoreAllMocks()
+})
+
+describe('セッションによる保護', () => {
+  it('Cookie が無ければ 401', async () => {
+    const kv = createMemoryKV()
+    const response = await api.request('/projects', {}, createEnv(kv))
+    expect(response.status).toBe(401)
+    const body = (await response.json()) as { error: string }
+    expect(body.error).toContain('ログインしていません')
+  })
+
+  it('未知のセッション ID なら 401', async () => {
+    const kv = createMemoryKV()
+    const response = await api.request('/projects', { headers: { Cookie: 'cg_session=unknown' } }, createEnv(kv))
+    expect(response.status).toBe(401)
+  })
+
+  it('認証情報を含むレスポンスはキャッシュさせない', async () => {
+    const kv = createMemoryKV()
+    const response = await api.request('/projects', {}, createEnv(kv))
+    expect(response.headers.get('Cache-Control')).toBe('no-store')
+  })
+})
+
+describe('/issues のパラメータ検証', () => {
+  let kv: KVNamespace
+  let cookie: string
+
+  beforeEach(async () => {
+    kv = createMemoryKV()
+    cookie = (await seedSession(kv)).cookie
+  })
+
+  it('プロジェクト未指定なら 400', async () => {
+    const response = await api.request(
+      '/issues?from=2026-09-01&to=2026-09-30',
+      { headers: { Cookie: cookie } },
+      createEnv(kv)
+    )
+    expect(response.status).toBe(400)
+    const body = (await response.json()) as { error: string }
+    expect(body.error).toContain('プロジェクト')
+  })
+
+  it('日付形式が不正なら 400', async () => {
+    const response = await api.request(
+      '/issues?projectIds=1&from=2026-13-01&to=2026-09-30',
+      { headers: { Cookie: cookie } },
+      createEnv(kv)
+    )
+    expect(response.status).toBe(400)
+  })
+
+  it('期間が逆転していたら 400', async () => {
+    const response = await api.request(
+      '/issues?projectIds=1&from=2026-10-01&to=2026-09-01',
+      { headers: { Cookie: cookie } },
+      createEnv(kv)
+    )
+    expect(response.status).toBe(400)
+    const body = (await response.json()) as { error: string }
+    expect(body.error).toContain('開始日')
+  })
+})
+
+describe('Backlog への中継', () => {
+  it('セッションのアクセストークンで Backlog を呼ぶ', async () => {
+    const kv = createMemoryKV()
+    const { cookie } = await seedSession(kv)
+    const calls: { url: string; authorization: string | null }[] = []
+
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      const headers = new Headers(init?.headers)
+      calls.push({ url, authorization: headers.get('Authorization') })
+      return jsonResponse([{ id: 1, projectKey: 'PJA', name: 'プロジェクトA', archived: false }])
+    }) as typeof fetch
+
+    const response = await api.request('/projects', { headers: { Cookie: cookie } }, createEnv(kv))
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual([{ id: 1, projectKey: 'PJA', name: 'プロジェクトA' }])
+    expect(calls).toHaveLength(1)
+    expect(calls[0].url).toContain('https://example.backlog.jp/api/v2/projects')
+    expect(calls[0].authorization).toBe('Bearer test-access-token')
+  })
+
+  it('Backlog が 401 を返したらそのまま 401 として返す', async () => {
+    const kv = createMemoryKV()
+    const { cookie } = await seedSession(kv)
+    globalThis.fetch = vi.fn(async () => new Response('unauthorized', { status: 401 })) as typeof fetch
+
+    const response = await api.request('/projects', { headers: { Cookie: cookie } }, createEnv(kv))
+    expect(response.status).toBe(401)
+  })
+})
+
+describe('アクセストークンの自動更新', () => {
+  it('期限が近いトークンは更新してから Backlog を呼ぶ', async () => {
+    const kv = createMemoryKV()
+    // 30 秒後に切れる = 更新マージン（60 秒）の内側。
+    const { sessionId, cookie } = await seedSession(kv, { expiresAt: Date.now() + 30_000 })
+
+    const urls: string[] = []
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      urls.push(url)
+      if (url.includes('/api/v2/oauth2/token')) {
+        return jsonResponse({
+          access_token: 'refreshed-token',
+          token_type: 'Bearer',
+          expires_in: 3600,
+          refresh_token: 'refreshed-refresh-token'
+        })
+      }
+      return jsonResponse([])
+    }) as typeof fetch
+
+    const response = await api.request('/projects', { headers: { Cookie: cookie } }, createEnv(kv))
+
+    expect(response.status).toBe(200)
+    expect(urls[0]).toContain('/api/v2/oauth2/token')
+
+    const stored = await getSession(kv, sessionId)
+    expect(stored?.accessToken).toBe('refreshed-token')
+    expect(stored?.refreshToken).toBe('refreshed-refresh-token')
+    expect(stored?.expiresAt).toBeGreaterThan(Date.now() + 3_000_000)
+  })
+
+  it('更新に失敗したら 401 を返す', async () => {
+    const kv = createMemoryKV()
+    const { cookie } = await seedSession(kv, { expiresAt: Date.now() + 1000 })
+    globalThis.fetch = vi.fn(async () => new Response('invalid_grant', { status: 400 })) as typeof fetch
+
+    const response = await api.request('/projects', { headers: { Cookie: cookie } }, createEnv(kv))
+    expect(response.status).toBe(401)
+    const body = (await response.json()) as { error: string }
+    expect(body.error).toContain('ログインし直して')
+  })
+})
