@@ -69,17 +69,33 @@ export async function takeState(kv: KVNamespace, state: string): Promise<StateRe
   return record
 }
 
+/** `sanitizeReturnTo` が解決先の判定に使うダミーのオリジン。 */
+const RETURN_TO_BASE = 'https://crossgantt.invalid'
+
 /**
  * 認可後の戻り先として安全なパスだけを許可する。
  *
- * `//evil.example.com` のようなプロトコル相対 URL を弾かないと
- * オープンリダイレクトになるため、先頭が `/` かつ 2 文字目が `/` でないものに限る。
+ * `//evil.example.com` のようなプロトコル相対 URL を弾かないとオープンリダイレクトになる。
+ * ただし前方一致だけの検査では不十分で、ブラウザは URL 解決時に `\` を `/` と同一視し、
+ * タブや改行といった制御文字を取り除いてから解釈する。そのため `/\evil.example.com` や
+ * `/<TAB>/evil.example.com` は `//evil.example.com` と同じ意味になってしまう。
+ * 実際に URL として解決し、オリジンが変わらないことを確認するのが確実なため、
+ * 同じ解釈ルールを持つ URL パーサーに判定を委ねる。
  */
 export function sanitizeReturnTo(value: string | null | undefined): string {
-  if (!value || !value.startsWith('/') || value.startsWith('//')) {
+  if (!value || !value.startsWith('/')) {
     return '/'
   }
-  return value
+  let resolved: URL
+  try {
+    resolved = new URL(value, RETURN_TO_BASE)
+  } catch {
+    return '/'
+  }
+  if (resolved.origin !== RETURN_TO_BASE) {
+    return '/'
+  }
+  return `${resolved.pathname}${resolved.search}${resolved.hash}`
 }
 
 export type CookieOptions = {

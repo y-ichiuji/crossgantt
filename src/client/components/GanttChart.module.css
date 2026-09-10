@@ -43,9 +43,14 @@
   );
 }
 
-/* 今日線はバーより手前に置きたいので、背景とは別のレイヤーにする。 */
+/*
+ * 今日線はバーより手前に置きたいので、背景とは別のレイヤーにする。
+ * ただし固定表示の課題名カラム（.rowHead, z-index 2）よりは奥に置く。
+ * 手前にすると、横スクロールして今日線がカラムの位置に来たときに
+ * 課題キーと件名の上へ赤い線が重なって読めなくなる。
+ */
 .foreground {
-  z-index: 2;
+  z-index: 1;
 }
 
 .weekend {
@@ -132,8 +137,13 @@
 }
 
 .row {
+  /*
+   * z-index は指定しない。指定すると行が独自の重ね合わせ文脈を作り、
+   * 中の .rowHead が行の階層に閉じ込められて .foreground（今日線）より
+   * 手前に出られなくなる。position: relative だけなら .background より
+   * 手前、.foreground より奥という意図どおりの順序になる。
+   */
   position: relative;
-  z-index: 1;
   display: flex;
   height: var(--row-height);
   border-bottom: 1px solid var(--surface-alt);

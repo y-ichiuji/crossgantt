@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { defaultFilter, defaultRange, fetchKey, filterToParams, parseFilter } from './filter'
-import type { ViewFilter } from './types'
+import { diffDays } from './date'
+import { clampRange, defaultFilter, defaultRange, filterToParams, MAX_RANGE_DAYS, parseFilter } from './filter'
 
 const NOW = Date.parse('2026-09-10T03:00:00Z')
 
@@ -64,11 +64,41 @@ describe('parseFilter', () => {
     expect(filter.includeClosed).toBe(true)
     expect(filter.includeNoDate).toBe(true)
   })
+
+  it('長すぎる期間は上限まで詰める', () => {
+    // 日ズームでは 1 日ごとに DOM を作るため、上限が無いと共有 URL 1 本で
+    // ブラウザが数百万ノードを生成して固まる。
+    const filter = parseFilter(new URLSearchParams('from=2000-01-01&to=2999-12-31'), NOW)
+    expect(filter.from).toBe('2000-01-01')
+    expect(diffDays(filter.from, filter.to) + 1).toBe(MAX_RANGE_DAYS)
+  })
+})
+
+describe('clampRange', () => {
+  it('逆転した期間は開始日に合わせる', () => {
+    expect(clampRange('2026-10-01', '2026-09-01')).toEqual({ from: '2026-10-01', to: '2026-10-01' })
+  })
+
+  it('上限以内ならそのまま返す', () => {
+    expect(clampRange('2026-09-01', '2026-12-31')).toEqual({ from: '2026-09-01', to: '2026-12-31' })
+  })
 })
 
 describe('filterToParams', () => {
-  it('既定値と同じ項目は省略する', () => {
-    expect(filterToParams(defaultFilter(NOW), NOW).toString()).toBe('')
+  it('既定値と同じ項目は省略する（ただし表示期間は必ず書き出す）', () => {
+    const base = defaultFilter(NOW)
+    // 既定の期間は「今日」を基準に計算されるため、省略すると URL の意味が
+    // 開いた日によって変わってしまい、共有相手が別の期間を見ることになる。
+    expect(filterToParams(base, NOW).toString()).toBe(`from=${base.from}&to=${base.to}`)
+  })
+
+  it('共有 URL は日付をまたいでも同じ期間を指す', () => {
+    const base = defaultFilter(NOW)
+    const params = filterToParams(base, NOW)
+    const oneMonthLater = NOW + 31 * 24 * 60 * 60 * 1000
+    // 受け取った側の「今日」が違っても、書き出された期間がそのまま復元される。
+    expect(parseFilter(params, oneMonthLater).from).toBe(base.from)
+    expect(parseFilter(params, oneMonthLater).to).toBe(base.to)
   })
 
   it('往復しても内容が保たれる', () => {
@@ -87,23 +117,5 @@ describe('filterToParams', () => {
     }
     const params = filterToParams(filter, NOW)
     expect(parseFilter(params, NOW)).toEqual(filter)
-  })
-})
-
-describe('fetchKey', () => {
-  it('グルーピングとズームの変更では変わらない', () => {
-    const base = defaultFilter(NOW)
-    const changed: ViewFilter = { ...base, groupBy: 'project', zoom: 'day' }
-    expect(fetchKey(changed)).toBe(fetchKey(base))
-  })
-
-  it('取得条件が変われば変わる', () => {
-    const base = defaultFilter(NOW)
-    expect(fetchKey({ ...base, projectIds: [1] })).not.toBe(fetchKey(base))
-  })
-
-  it('取得条件が同じなら順序が違っても同じキーになる', () => {
-    const base = defaultFilter(NOW)
-    expect(fetchKey({ ...base, projectIds: [1, 2] })).toBe(fetchKey({ ...base, projectIds: [1, 2] }))
   })
 })

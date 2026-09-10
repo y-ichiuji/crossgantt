@@ -344,12 +344,15 @@ export const PROJECT_COLORS = [
  * プロジェクト ID から安定的に色を決める。
  *
  * ID をそのまま剰余に掛けると、100 と 200 のような切りのよい ID が
- * 同じ色に落ちやすい。Knuth の乗算ハッシュで 32 ビットに混ぜてから
- * 剰余を取ることで分布を均す。
+ * 同じ色に落ちやすいため、Knuth の乗算ハッシュで 32 ビットに混ぜる。
+ * ただし乗算ハッシュで質が良いのは上位ビットで、下位ビットには規則性が残る。
+ * 乗数は奇数なので `hashed % 2` は `projectId % 2` と一致してしまい、
+ * 剰余を取ると偶数 ID が偶数番目の色にしか当たらない。
+ * 上位ビットを使うため、剰余ではなく 0〜1 に正規化してから割り当てる。
  */
 export function projectColor(projectId: number): string {
   const hashed = Math.imul(projectId | 0, 2654435761) >>> 0
-  return PROJECT_COLORS[hashed % PROJECT_COLORS.length]
+  return PROJECT_COLORS[Math.floor((hashed / 0x1_0000_0000) * PROJECT_COLORS.length)]
 }
 
 /** Backlog がステータスに色を持たない場合のフォールバック。 */
@@ -394,12 +397,30 @@ export function relativeLuminance(color: string): number {
   return 0.2126 * toLinear(red) + 0.7152 * toLinear(green) + 0.0722 * toLinear(blue)
 }
 
+/** バーの文字色の候補。 */
+const DARK_TEXT = '#1c2430'
+const LIGHT_TEXT = '#ffffff'
+
+/** WCAG のコントラスト比。1（同色）〜 21（黒と白）。 */
+function contrastRatio(a: number, b: number): number {
+  const [brighter, darker] = a >= b ? [a, b] : [b, a]
+  return (brighter + 0.05) / (darker + 0.05)
+}
+
 /**
  * 指定した背景色の上で読みやすい文字色を返す。
  *
  * Backlog のステータス色は明るいもの（例: 完了の #b0be3c）と
  * 暗いものが混在するため、固定の白文字だと読めなくなる。
+ *
+ * 輝度をしきい値と比べる方法では、そのしきい値が白黒の分かれ目
+ * （この配色では約 0.216）と一致していないと中間色で誤った側を選ぶ。
+ * 実際にコントラスト比を計算して高い方を採るのが確実で、
+ * しきい値という調整の要る定数も持たずに済む。
  */
 export function readableTextColor(background: string): string {
-  return relativeLuminance(background) > 0.45 ? '#1c2430' : '#ffffff'
+  const luminance = relativeLuminance(background)
+  const onDark = contrastRatio(luminance, relativeLuminance(DARK_TEXT))
+  const onLight = contrastRatio(luminance, relativeLuminance(LIGHT_TEXT))
+  return onDark >= onLight ? DARK_TEXT : LIGHT_TEXT
 }

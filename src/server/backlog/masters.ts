@@ -104,10 +104,18 @@ export function groupStatuses(statuses: BacklogStatus[]): StatusGroup[] {
     })
 }
 
-/** ステータス名の選択を、Backlog へ渡す ID 群へ展開する。 */
+/**
+ * ステータス名の選択を、Backlog へ渡す ID 群へ展開する。
+ *
+ * 「完了を含む」は明示的な選択が無いときの既定を決めるものであり、
+ * ユーザーが名前でステータスを選んだ場合はその選択を優先する。
+ * ここで選択を打ち消してしまうと、「完了」だけを選んだときに ID が空になり、
+ * 呼び出し元が 200 のまま 0 件を返して「該当なし」と見分けが付かなくなる。
+ */
 export function resolveStatusIds(groups: StatusGroup[], selectedNames: string[], includeClosed: boolean): number[] {
-  const target = selectedNames.length > 0 ? groups.filter((group) => selectedNames.includes(group.name)) : groups
-  const filtered = includeClosed ? target : target.filter((group) => !group.isClosed)
+  const explicit = selectedNames.length > 0
+  const target = explicit ? groups.filter((group) => selectedNames.includes(group.name)) : groups
+  const filtered = includeClosed || explicit ? target : target.filter((group) => !group.isClosed)
   const ids = new Set<number>()
   for (const group of filtered) {
     for (const id of group.ids) {

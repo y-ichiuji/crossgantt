@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { todayKey } from '../shared/date'
-import { filterToParams, parseFilter } from '../shared/filter'
+import { isDateKey, todayKey } from '../shared/date'
+import { clampRange, filterToParams, parseFilter } from '../shared/filter'
 import { summarize } from '../shared/gantt'
 import type {
   GanttIssue,
@@ -78,7 +78,7 @@ export default function App() {
   /** セッション確認が終わるまでは画面を確定させない。 */
   const [sessionChecked, setSessionChecked] = useState(false)
   const [loggingIn, setLoggingIn] = useState(false)
-  const [authError, setAuthError] = useState<string | null>(() => consumeAuthError())
+  const [authError, setAuthError] = useState<string | null>(null)
   const [showLoginPanel, setShowLoginPanel] = useState(false)
 
   const [filter, setFilter] = useState<ViewFilter>(() =>
@@ -108,6 +108,15 @@ export default function App() {
   const patchFilter = useCallback((patch: Partial<ViewFilter>) => {
     setFilter((prev) => {
       const next = { ...prev, ...patch }
+      // <input type="date"> は消去中や入力途中に空文字を送ってくる。そのまま取り込むと
+      // 以降の日付計算が NaN になり、目盛りの生成で toISOString が RangeError を投げて
+      // 画面が真っ白になる。妥当な DateKey でなければ直前の値を保つ。
+      if (!isDateKey(next.from)) {
+        next.from = prev.from
+      }
+      if (!isDateKey(next.to)) {
+        next.to = prev.to
+      }
       // 期間が逆転しないように補正する。
       if (next.to < next.from) {
         if (patch.from === undefined) {
@@ -116,6 +125,10 @@ export default function App() {
           next.to = next.from
         }
       }
+      // 描画量が現実的な範囲に収まるよう、期間の長さにも上限を設ける。
+      const ranged = clampRange(next.from, next.to)
+      next.from = ranged.from
+      next.to = ranged.to
       return next
     })
   }, [])
@@ -140,6 +153,17 @@ export default function App() {
 
   // --- 認証 ---
 
+  // コールバックが付けた auth_error を読み取り、URL からは取り除く。
+  // history.replaceState は副作用なので、レンダー中（useState の初期化子）では実行しない。
+  // StrictMode は初期化子を二度呼ぶため、1 回目で URL から消えたパラメータを
+  // 2 回目が読めず、その戻り値が採用されてメッセージが表示されなくなる。
+  useEffect(() => {
+    const message = consumeAuthError()
+    if (message !== null) {
+      setAuthError(message)
+    }
+  }, [])
+
   const handleLogin = useCallback((space: string) => {
     setLoggingIn(true)
     setAuthError(null)
@@ -163,6 +187,9 @@ export default function App() {
       setFetchedAt(null)
       setShowLoginPanel(false)
       setAuthError(null)
+      // 別スペース・別アカウントで入り直すと、残っているプロジェクト ID は
+      // そのスペースには存在しない。自動選択をやり直せるようにしておく。
+      autoSelectedRef.current = false
     }
     void run()
   }, [])
@@ -210,12 +237,17 @@ export default function App() {
   }, [viewer, reportError])
 
   // プロジェクト未選択のまま開かれた場合は、参加しているすべてのプロジェクトを選ぶ。
+  // 自動選択は「一覧を最初に受け取ったとき」の 1 回だけ。選択済みで始まった場合に
+  // フラグを立てずに戻ってしまうと、利用者が最初にクリアした瞬間に全選択へ戻され、
+  // 選択を空にできなくなる。
   useEffect(() => {
-    if (autoSelectedRef.current || projects.length === 0 || filter.projectIds.length > 0) {
+    if (autoSelectedRef.current || projects.length === 0) {
       return
     }
     autoSelectedRef.current = true
-    patchFilter({ projectIds: projects.map((project) => project.id) })
+    if (filter.projectIds.length === 0) {
+      patchFilter({ projectIds: projects.map((project) => project.id) })
+    }
   }, [projects, filter.projectIds.length, patchFilter])
 
   // 依存配列をプリミティブだけで表現するため、配列はカンマ区切りのキーに畳む。
@@ -315,7 +347,11 @@ export default function App() {
         reportError(error)
         setIssues([])
       } finally {
-        setLoading(false)
+        // 中断された場合は後続のリクエストがすでに走っている。ここで下ろすと
+        // 読み込み中なのに完了扱いになり、再読込ボタンが押せてしまう。
+        if (!controller.signal.aborted) {
+          setLoading(false)
+        }
       }
     }
     void run()

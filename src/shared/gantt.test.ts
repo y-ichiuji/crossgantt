@@ -294,9 +294,16 @@ describe('readableTextColor', () => {
   })
 
   it('暗い背景には白い文字を選ぶ', () => {
-    // Backlog の「処理中」の既定色。
-    expect(readableTextColor('#4488c5')).toBe('#ffffff')
     expect(readableTextColor('#000000')).toBe('#ffffff')
+    expect(readableTextColor('#1f2937')).toBe('#ffffff')
+  })
+
+  it('中間の明るさでもコントラストの高い方を選ぶ', () => {
+    // 輝度 0.18〜0.45 の色は、白文字だとコントラスト比が 3:1 を割り込む。
+    // フォールバック色 #94a3b8 は白だと 2.56:1、濃色なら 6.09:1。
+    expect(readableTextColor(FALLBACK_STATUS_COLOR)).toBe('#1c2430')
+    // Backlog の「処理済み」の既定色。白だと 2.29:1 しかない。
+    expect(readableTextColor('#eb9a2b')).toBe('#1c2430')
   })
 
   it('解釈できない色でも白い文字にフォールバックする', () => {

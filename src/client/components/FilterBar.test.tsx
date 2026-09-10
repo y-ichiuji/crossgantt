@@ -39,21 +39,21 @@ describe('FilterBar', () => {
 
   it('プロジェクトを選ぶと数値の配列で通知する', async () => {
     const { onChange, user } = setup()
-    await user.click(screen.getByRole('button', { name: '未選択' }))
+    await user.click(screen.getByRole('button', { name: 'プロジェクト 未選択' }))
     await user.click(screen.getByLabelText('PJA プロジェクトA'))
     expect(onChange).toHaveBeenCalledWith({ projectIds: [100] })
   })
 
   it('担当者も数値の配列で通知する', async () => {
     const { onChange, user } = setup()
-    await user.click(screen.getByRole('button', { name: 'すべて' }))
+    await user.click(screen.getByRole('button', { name: '担当者 すべて' }))
     await user.click(screen.getByLabelText('佐藤花子'))
     expect(onChange).toHaveBeenCalledWith({ assigneeIds: [20] })
   })
 
   it('ステータスは名前の配列で通知する', async () => {
     const { onChange, user } = setup()
-    await user.click(screen.getByRole('button', { name: '完了以外すべて' }))
+    await user.click(screen.getByRole('button', { name: 'ステータス 完了以外すべて' }))
     await user.click(screen.getByLabelText('処理中'))
     expect(onChange).toHaveBeenCalledWith({ statusNames: ['処理中'] })
   })
@@ -108,12 +108,12 @@ describe('FilterBar', () => {
 
   it('読み込み中は担当者とステータスの操作を無効にする', () => {
     setup({ loading: true })
-    expect((screen.getByRole('button', { name: 'すべて' }) as HTMLButtonElement).disabled).toBe(true)
-    expect((screen.getByRole('button', { name: '完了以外すべて' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: '担当者 すべて' }) as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: 'ステータス 完了以外すべて' }) as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('読み込み中でもプロジェクトは変更できる', () => {
     setup({ loading: true })
-    expect((screen.getByRole('button', { name: '未選択' }) as HTMLButtonElement).disabled).toBe(false)
+    expect((screen.getByRole('button', { name: 'プロジェクト 未選択' }) as HTMLButtonElement).disabled).toBe(false)
   })
 })

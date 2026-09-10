@@ -26,7 +26,10 @@ export function MultiSelect({ label, options, selected, onChange, emptyLabel, di
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
   const listId = useId()
+  const labelId = useId()
+  const summaryId = useId()
 
   useEffect(() => {
     if (!open) {
@@ -40,6 +43,9 @@ export function MultiSelect({ label, options, selected, onChange, emptyLabel, di
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setOpen(false)
+        // パネルを閉じると中にあったフォーカスごと消えて body に戻ってしまい、
+        // 次の Tab がページ先頭からやり直しになる。開いた元のボタンへ返す。
+        triggerRef.current?.focus()
       }
     }
     document.addEventListener('mousedown', onPointerDown)
@@ -67,23 +73,38 @@ export function MultiSelect({ label, options, selected, onChange, emptyLabel, di
     } else {
       next.add(value)
     }
-    onChange(options.filter((option) => next.has(option.value)).map((option) => option.value))
+    // 選択肢は選択中のプロジェクトに応じて非同期に入れ替わるため、
+    // 手元の options に無い選択値（共有 URL 由来など）が残ることがある。
+    // options だけで組み直すとそれらが黙って消えるので、選択肢の順に並べたうえで
+    // 一覧に無い選択値は末尾に残す。
+    const known = options.filter((option) => next.has(option.value)).map((option) => option.value)
+    const knownValues = new Set(options.map((option) => option.value))
+    const unknown = [...next].filter((item) => !knownValues.has(item))
+    onChange([...known, ...unknown])
   }
 
   const summary = selected.length === 0 ? emptyLabel : `${selected.length}件選択`
 
   return (
     <div className={styles.root} ref={containerRef}>
-      <span className={styles.label}>{label}</span>
+      <span className={styles.label} id={labelId}>
+        {label}
+      </span>
       <button
         type="button"
+        ref={triggerRef}
         className={styles.trigger}
         onClick={() => setOpen((value) => !value)}
         disabled={disabled || options.length === 0}
         aria-expanded={open}
-        aria-controls={listId}
+        // 見出しの「プロジェクト」「担当者」「ステータス」と現在の選択状況を
+        // 続けて読み上げさせる。見出しを結び付けないと、支援技術には
+        // 「未選択」「2件選択」としか伝わらず、どの絞り込みか区別できない。
+        aria-labelledby={`${labelId} ${summaryId}`}
+        // 閉じているあいだパネルは存在しないため、参照させない。
+        aria-controls={open ? listId : undefined}
       >
-        <span>{options.length === 0 ? '選択肢がありません' : summary}</span>
+        <span id={summaryId}>{options.length === 0 ? '選択肢がありません' : summary}</span>
         <span aria-hidden="true">▾</span>
       </button>
 
@@ -103,7 +124,10 @@ export function MultiSelect({ label, options, selected, onChange, emptyLabel, di
             <button
               type="button"
               className={styles.actionButton}
-              onClick={() => onChange(visibleOptions.map((option) => option.value))}
+              // 「表示中」を足すのであって、既存の選択を置き換えるのではない。
+              // 絞り込み中に置き換えてしまうと、検索語に一致しない選択済みの項目が
+              // 画面に出ていないまま外れてしまう。
+              onClick={() => onChange([...new Set([...selected, ...visibleOptions.map((option) => option.value)])])}
             >
               表示中をすべて選択
             </button>

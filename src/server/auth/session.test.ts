@@ -82,6 +82,21 @@ describe('sanitizeReturnTo', () => {
     expect(sanitizeReturnTo('javascript:alert(1)')).toBe('/')
   })
 
+  it('バックスラッシュや制御文字でオリジンを差し替える形も / に落とす', () => {
+    // ブラウザは URL 解決時に `\` を `/` と同じに扱い、タブや改行は取り除く。
+    // そのため以下はいずれも `//evil.example.com` と同じ意味になり、
+    // 先頭の 2 文字だけを見る検査では素通りしてしまう。
+    expect(sanitizeReturnTo('/\\evil.example.com')).toBe('/')
+    expect(sanitizeReturnTo('/\\/evil.example.com')).toBe('/')
+    expect(sanitizeReturnTo('/\t/evil.example.com')).toBe('/')
+    expect(sanitizeReturnTo('/\n//evil.example.com')).toBe('/')
+  })
+
+  it('クエリやフラグメント付きの相対パスは保つ', () => {
+    expect(sanitizeReturnTo('/?projects=1,2&group=assignee')).toBe('/?projects=1,2&group=assignee')
+    expect(sanitizeReturnTo('/path/sub?a=1#frag')).toBe('/path/sub?a=1#frag')
+  })
+
   it('未指定なら / を返す', () => {
     expect(sanitizeReturnTo(null)).toBe('/')
     expect(sanitizeReturnTo(undefined)).toBe('/')

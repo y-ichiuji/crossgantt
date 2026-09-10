@@ -9,7 +9,7 @@
 import { parseBacklogDate } from '../../shared/date'
 import type { GanttIssue } from '../../shared/types'
 import type { BacklogCountResponse, BacklogIssue } from './api-types'
-import { type BacklogClient, mapWithConcurrency, type QueryParams } from './client'
+import { BacklogApiError, type BacklogClient, mapWithConcurrency, type QueryParams } from './client'
 import { issueUrl } from './space'
 
 /** 課題検索 1 リクエストあたりの最大取得件数（Backlog API の上限）。 */
@@ -86,6 +86,12 @@ async function fetchQuery(
   params: QueryParams
 ): Promise<{ issues: BacklogIssue[]; truncated: boolean }> {
   const { count } = await client.get<BacklogCountResponse>('/issues/count', params)
+  // count が数値でないと Math.ceil / Math.min が NaN になり、Array.from({length: NaN})
+  // が空配列を返すため「0 件でした」と区別が付かないまま静かに握り潰されてしまう。
+  // 想定外のレスポンスは失敗として扱い、利用者にも伝わるようにする。
+  if (!Number.isFinite(count)) {
+    throw new BacklogApiError(502, 'Backlog の課題件数レスポンスを解釈できませんでした')
+  }
   if (count <= 0) {
     return { issues: [], truncated: false }
   }
@@ -164,12 +170,13 @@ export async function fetchGanttIssues(
       if (byId.has(raw.id)) {
         continue
       }
-      const normalized = normalizeIssue(client.space, projectKeys, raw)
       // 日付条件なしのクエリは全課題を返してしまうため、日付未設定のものだけを採用する。
-      if (result.noDateOnly && (normalized.startDate || normalized.dueDate)) {
+      // 正規化の前に捨てることで、大半を占める対象外の課題に対する
+      // 日付パースとオブジェクト生成を丸ごと省ける。
+      if (result.noDateOnly && (raw.startDate || raw.dueDate)) {
         continue
       }
-      byId.set(raw.id, normalized)
+      byId.set(raw.id, normalizeIssue(client.space, projectKeys, raw))
     }
   }
 

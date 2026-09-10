@@ -81,6 +81,62 @@ describe('/issues のパラメータ検証', () => {
     const body = (await response.json()) as { error: string }
     expect(body.error).toContain('開始日')
   })
+
+  it('期間が長すぎたら 400', async () => {
+    const response = await api.request(
+      '/issues?projectIds=1&from=2000-01-01&to=2999-12-31',
+      { headers: { Cookie: cookie } },
+      createEnv(kv)
+    )
+    expect(response.status).toBe(400)
+    const body = (await response.json()) as { error: string }
+    expect(body.error).toContain('長すぎます')
+  })
+
+  it('参加していないプロジェクトだけを指定したら 403 で、Backlog の課題検索は呼ばない', async () => {
+    const calls: string[] = []
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      calls.push(url)
+      return jsonResponse([{ id: 1, projectKey: 'PJA', name: 'プロジェクトA', archived: false }])
+    }) as typeof fetch
+
+    const response = await api.request(
+      '/issues?projectIds=999&from=2026-09-01&to=2026-09-30',
+      { headers: { Cookie: cookie } },
+      createEnv(kv)
+    )
+
+    expect(response.status).toBe(403)
+    // 参加プロジェクトの確認だけで、課題検索へは進まない。
+    expect(calls.filter((url) => url.includes('/issues'))).toHaveLength(0)
+  })
+})
+
+describe('参加していないプロジェクト ID の扱い', () => {
+  it('/members は参加しているプロジェクトだけを問い合わせる', async () => {
+    const kv = createMemoryKV()
+    const { cookie } = await seedSession(kv)
+    const calls: string[] = []
+
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+      calls.push(url)
+      if (url.includes('/api/v2/projects/')) {
+        return jsonResponse([{ id: 7, userId: 'taro', name: '山田太郎' }])
+      }
+      return jsonResponse([{ id: 1, projectKey: 'PJA', name: 'プロジェクトA', archived: false }])
+    }) as typeof fetch
+
+    // 1 は参加中、999 は他人のプロジェクト（共有 URL 経由で紛れ込むケース）。
+    const response = await api.request('/members?projectIds=1,999', { headers: { Cookie: cookie } }, createEnv(kv))
+
+    // 999 をそのまま投げると 404 で全体が失敗していた。絞り込んで成功させる。
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual([{ id: 7, name: '山田太郎' }])
+    expect(calls.some((url) => url.includes('/projects/999/'))).toBe(false)
+    expect(calls.some((url) => url.includes('/projects/1/users'))).toBe(true)
+  })
 })
 
 describe('Backlog への中継', () => {

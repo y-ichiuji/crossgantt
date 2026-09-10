@@ -95,11 +95,27 @@ export class BacklogClient {
     return url.toString()
   }
 
+  /**
+   * ヘッダーの数値を読む。未設定・空・数値でない場合は null。
+   *
+   * `Number(null)` は 0 になり `Number.isFinite(0)` も真なので、
+   * `Number()` の結果だけで有無を判定すると「ヘッダーが無い」を
+   * 「残り 0」と取り違える。
+   */
+  private headerNumber(response: Response, name: string): number | null {
+    const raw = response.headers.get(name)
+    if (raw === null || raw.trim() === '') {
+      return null
+    }
+    const value = Number(raw)
+    return Number.isFinite(value) ? value : null
+  }
+
   private readRateLimit(response: Response): void {
-    const limit = Number(response.headers.get('X-RateLimit-Limit'))
-    const remaining = Number(response.headers.get('X-RateLimit-Remaining'))
-    const reset = Number(response.headers.get('X-RateLimit-Reset'))
-    if (Number.isFinite(limit) && Number.isFinite(remaining) && Number.isFinite(reset)) {
+    const limit = this.headerNumber(response, 'X-RateLimit-Limit')
+    const remaining = this.headerNumber(response, 'X-RateLimit-Remaining')
+    const reset = this.headerNumber(response, 'X-RateLimit-Reset')
+    if (limit !== null && remaining !== null && reset !== null) {
       this.lastRateLimit = { limit, remaining, reset }
     }
   }
