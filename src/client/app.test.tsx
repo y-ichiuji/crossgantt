@@ -130,9 +130,11 @@ describe('ログイン済みの表示', () => {
       expect(requestedUrls.filter((url) => url.startsWith('/api/issues'))).toHaveLength(1)
     })
 
-    await user.click(screen.getByRole('button', { name: '日' }))
+    // 既定のズームは「日」なので、「日」を押しても値は変わらず何も検証できない。
+    // 実際に値が変わる「週」へ切り替える。
+    await user.click(screen.getByRole('button', { name: '週' }))
     await waitFor(() => {
-      expect(document.querySelector('[data-testid="weekend-band"]')).not.toBeNull()
+      expect(screen.getByRole('button', { name: '週' }).getAttribute('aria-pressed')).toBe('true')
     })
     expect(requestedUrls.filter((url) => url.startsWith('/api/issues'))).toHaveLength(1)
   })

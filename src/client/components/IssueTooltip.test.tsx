@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
 import { makeIssue } from '../../shared/test-fixtures'
 import { IssueTooltip, type TooltipState } from './IssueTooltip'
@@ -65,6 +65,17 @@ describe('IssueTooltip', () => {
   it('マイルストーンが無ければ行ごと出さない', () => {
     render(<IssueTooltip state={state({ issue: makeIssue({ milestoneNames: [] }) })} />)
     expect(screen.queryByText('マイルストーン')).toBeNull()
+  })
+
+  // innerWidth を差し替えたまま返すと、以降のテストが 1600px の環境を
+  // 前提に動いてしまい、実行順に依存した不安定な結果になる。必ず戻す。
+  const originalInnerWidth = Object.getOwnPropertyDescriptor(window, 'innerWidth')
+  afterEach(() => {
+    if (originalInnerWidth) {
+      Object.defineProperty(window, 'innerWidth', originalInnerWidth)
+    } else {
+      Reflect.deleteProperty(window, 'innerWidth')
+    }
   })
 
   it('ビューポートの右端からはみ出さない', () => {

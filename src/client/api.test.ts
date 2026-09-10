@@ -90,6 +90,16 @@ describe('getSession', () => {
 })
 
 describe('startLogin', () => {
+  // location を差し替えたまま返すと、以降のテストでは pathname と search しか
+  // 生えていない偽物が残り、history.replaceState も効かなくなる。
+  // vi.restoreAllMocks() では defineProperty を取り消せないため明示的に戻す。
+  const originalLocation = Object.getOwnPropertyDescriptor(window, 'location')
+  afterEach(() => {
+    if (originalLocation) {
+      Object.defineProperty(window, 'location', originalLocation)
+    }
+  })
+
   it('スペースと戻り先を付けてログインへ遷移する', () => {
     window.history.replaceState(null, '', '/?projects=1,2')
     const assigned: string[] = []

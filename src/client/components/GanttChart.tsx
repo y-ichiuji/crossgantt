@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import { formatShort } from '../../shared/date'
 import {
@@ -36,7 +36,6 @@ const ROW_HEIGHT = 28
 export function GanttChart({ issues, filter, today, projectNames }: Props) {
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
   const [tooltip, setTooltip] = useState<TooltipState | null>(null)
-  const scrollRef = useRef<HTMLDivElement>(null)
 
   const scale = useMemo(() => buildScale(filter.from, filter.to, filter.zoom), [filter.from, filter.to, filter.zoom])
 
@@ -88,7 +87,6 @@ export function GanttChart({ issues, filter, today, projectNames }: Props) {
       <div
         className={styles.scroller}
         data-testid="gantt-scroller"
-        ref={scrollRef}
         style={
           {
             '--timeline-width': `${scale.width}px`,
@@ -223,7 +221,9 @@ export function GanttChart({ issues, filter, today, projectNames }: Props) {
                               rel="noreferrer"
                               aria-label={`${label}（${period}、${issue.statusName}）`}
                               onMouseEnter={(event) => showTooltip(issue, event)}
-                              onMouseMove={(event) => showTooltip(issue, event)}
+                              // mousemove ごとに setTooltip すると、毎秒数十回チャート全体が
+                              // 再レンダリングされる（行数ぶんの再計算と差分検出が走る）。
+                              // 位置決めは onMouseEnter の 1 回で足りる。
                               onMouseLeave={() => setTooltip(null)}
                               onFocus={(event) => {
                                 const rect = event.currentTarget.getBoundingClientRect()
