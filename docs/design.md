@@ -413,6 +413,21 @@ SSR シェルは `<Script>` がビルド後の manifest を読み、対応する
 | 10  | Cloudflare Workers へのデプロイ                                                        | 完了 |
 | 11  | CI / CD（GitHub Actions）と Renovate による依存更新                                    | 完了 |
 
+### デプロイの前提条件
+
+`main` への push で即デプロイするのではなく、**CI と CodeQL の両方が同じコミットで成功してから**
+デプロイする（`workflow_run` による直列化）。
+
+`workflow_run` はどちらか一方の完了ごとに発火するため、gate ジョブで次を確認する。
+
+1. 起動元が push であること（CodeQL の定期実行でデプロイしない）
+2. 起動元のワークフローが success であること
+3. GitHub API で同じ SHA の CI と CodeQL の結論を引き、**両方 success** であること
+
+先に終わったほうは相手が `pending` なので見送り、後に終わったほうがデプロイまで進む。
+checkout する SHA は `workflow_run` のイベントから取るため、gate で 40 桁の 16 進で
+あることを検証してから `ref` に渡している。
+
 ### 品質チェックの構成
 
 | コマンド                 | 内容                                       |

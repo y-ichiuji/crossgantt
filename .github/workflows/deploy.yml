@@ -1,10 +1,21 @@
 name: Deploy
 
-# GitHub Flow: main が常にデプロイ可能な状態。main への push で本番へ反映する。
+# CI と CodeQL が同じコミットで成功してから動く。
+#
+# workflow_run はどちらか一方が完了するたびに発火するため、gate ジョブで
+# 「もう片方も同じ SHA で成功しているか」を確認する。先に終わったほうは
+# 相手が未完了なので見送り、後に終わったほうがデプロイまで進む。
 on:
-  push:
+  workflow_run:
+    workflows: [CI, CodeQL]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
+    inputs:
+      skip_checks:
+        description: CI / CodeQL の成功確認を省略する（緊急時のみ）
+        type: boolean
+        default: false
 
 concurrency:
   group: deploy-production
@@ -14,32 +25,89 @@ permissions:
   contents: read
 
 jobs:
-  verify:
-    name: デプロイ前の検証
+  gate:
+    name: CI と CodeQL の成功を確認
     runs-on: ubuntu-latest
+    permissions:
+      # 他のワークフローの実行結果を読むために必要。
+      actions: read
+      contents: read
+    outputs:
+      proceed: ${{ steps.resolve.outputs.proceed }}
+      sha: ${{ steps.resolve.outputs.sha }}
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: 対象コミットと前提チェックの確認
+        id: resolve
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          TRIGGER_EVENT: ${{ github.event.workflow_run.event }}
+          TRIGGER_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          TRIGGER_SHA: ${{ github.event.workflow_run.head_sha }}
+          FALLBACK_SHA: ${{ github.sha }}
+          SKIP_CHECKS: ${{ inputs.skip_checks }}
+        run: |
+          set -euo pipefail
 
-      - name: corepack を有効化
-        run: corepack enable
+          skip=false
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            sha="$FALLBACK_SHA"
+            skip="$SKIP_CHECKS"
+          else
+            sha="$TRIGGER_SHA"
+            # 定期実行の CodeQL などで無駄にデプロイしない。
+            if [ "$TRIGGER_EVENT" != "push" ]; then
+              echo "起動元が push ではない（$TRIGGER_EVENT）ためデプロイしません"
+              echo 'proceed=false' >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            if [ "$TRIGGER_CONCLUSION" != "success" ]; then
+              echo "起動元のワークフローが $TRIGGER_CONCLUSION のためデプロイしません"
+              echo 'proceed=false' >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
 
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
-        with:
-          node-version-file: .node-version
-          cache: pnpm
+          # checkout の ref に渡すため、コミットハッシュの形であることを確かめる。
+          if ! printf '%s' "$sha" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::対象コミットの形式が不正です: $sha"
+            exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
 
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm run verify
+          if [ "$skip" = "true" ]; then
+            echo "::warning::CI / CodeQL の確認を省略してデプロイします（$sha）"
+            echo 'proceed=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          for workflow in CI CodeQL; do
+            conclusion=$(gh api "repos/$REPO/actions/runs?head_sha=$sha&event=push" \
+              --jq "([.workflow_runs[] | select(.name == \"$workflow\")] | sort_by(.run_started_at) | last | .conclusion) // \"pending\"")
+            echo "$workflow: $conclusion"
+            if [ "$conclusion" != "success" ]; then
+              echo "::notice::$workflow が success ではない（$conclusion）ため、このタイミングではデプロイしません"
+              echo 'proceed=false' >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+
+          echo 'proceed=true' >> "$GITHUB_OUTPUT"
 
   deploy:
     name: Cloudflare Workers へデプロイ
-    needs: verify
+    needs: gate
+    if: needs.gate.outputs.proceed == 'true'
     runs-on: ubuntu-latest
     environment:
       name: production
       url: https://crossgantt.y-ichiuji.workers.dev
     steps:
+      # gate で 40 桁の 16 進であることを検証済みのコミットを取り出す。
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
 
       - name: corepack を有効化
         run: corepack enable
@@ -50,6 +118,9 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+
+      # 静的解析とテストは CI 側で同じコミットに対して済んでいる。
+      # ここではビルドとデプロイだけを行う。
       - run: pnpm run build
 
       # wrangler の汎用エラーより先に、何が足りないかを明示する。
