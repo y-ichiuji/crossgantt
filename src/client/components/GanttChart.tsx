@@ -10,12 +10,11 @@ import {
   isOverdue,
   minorTicks,
   monthTicks,
-  projectColor,
   readableTextColor,
   resolveBar,
   statusColor,
-  weekendBands,
-  xOf
+  todayBand,
+  weekendBands
 } from '../../shared/gantt'
 import type { GanttIssue, ViewFilter } from '../../shared/types'
 import { AssigneeAvatar } from './AssigneeAvatar'
@@ -52,7 +51,7 @@ export function GanttChart({ issues, filter, today, projectNames }: Props) {
   const majors = useMemo(() => monthTicks(scale), [scale])
   const minors = useMemo(() => minorTicks(scale, filter.zoom), [scale, filter.zoom])
   const weekends = useMemo(() => weekendBands(scale, filter.zoom), [scale, filter.zoom])
-  const todayLeft = today >= filter.from && today <= filter.to ? xOf(today, scale) : null
+  const todayColumn = useMemo(() => todayBand(scale, filter.zoom, today), [scale, filter.zoom, today])
 
   const toggleGroup = (key: string) => {
     setCollapsed((prev) => {
@@ -96,6 +95,11 @@ export function GanttChart({ issues, filter, today, projectNames }: Props) {
         }
       >
         <div className={styles.inner}>
+          {/*
+           * 今日の帯・土日・月境界はいずれも背景として扱う。固定表示の課題名カラム
+           * （.rowHead）より奥のレイヤーに置くことで、横スクロールして今日の位置が
+           * カラムに重なっても課題キーと件名を隠さない。
+           */}
           <div className={styles.background} aria-hidden="true">
             {weekends.map((band) => (
               <div
@@ -105,17 +109,18 @@ export function GanttChart({ issues, filter, today, projectNames }: Props) {
                 style={{ left: band.left, width: band.width }}
               />
             ))}
+            {/* 今日が土日に当たることもあるため、土日の帯より後に重ねる。 */}
+            {todayColumn ? (
+              <div
+                className={styles.today}
+                data-testid="today-column"
+                style={{ left: todayColumn.left, width: todayColumn.width }}
+              />
+            ) : null}
             {majors.map((tick) => (
               <div key={tick.key} className={styles.monthLine} style={{ left: tick.left }} />
             ))}
           </div>
-
-          {/* 今日線はバーより手前に描くため、背景とは別のレイヤーに置く。 */}
-          {todayLeft !== null ? (
-            <div className={styles.foreground} aria-hidden="true">
-              <div className={styles.today} data-testid="today-line" style={{ left: todayLeft }} />
-            </div>
-          ) : null}
 
           <div className={styles.header}>
             <div className={styles.headCell}>課題</div>
@@ -129,7 +134,13 @@ export function GanttChart({ issues, filter, today, projectNames }: Props) {
               </div>
               <div className={styles.ticksMinor}>
                 {minors.map((tick) => (
-                  <div key={tick.key} className={styles.tick} style={{ left: tick.left, width: tick.width }}>
+                  <div
+                    key={tick.key}
+                    className={styles.tick}
+                    // 帯はヘッダーの下に隠れるため、目盛り側でも今日の列を示す。
+                    data-today={tick.key === todayColumn?.key}
+                    style={{ left: tick.left, width: tick.width }}
+                  >
                     {tick.label}
                   </div>
                 ))}
@@ -184,11 +195,6 @@ export function GanttChart({ issues, filter, today, projectNames }: Props) {
                           style={{ contentVisibility: 'auto', containIntrinsicSize: `${ROW_HEIGHT}px` }}
                         >
                           <div className={styles.rowHead}>
-                            <span
-                              className={styles.projectChip}
-                              style={{ backgroundColor: projectColor(issue.projectId) }}
-                              title={issue.projectKey}
-                            />
                             <AssigneeAvatar assigneeId={issue.assigneeId} assigneeName={issue.assigneeName} />
                             <a
                               className={styles.issueLink}
@@ -264,7 +270,6 @@ function NoDateSection({ issues, projectNames }: { issues: GanttIssue[]; project
         <ul className={styles.noDateList}>
           {issues.map((issue) => (
             <li key={issue.id}>
-              <span className={styles.projectChip} style={{ backgroundColor: projectColor(issue.projectId) }} />
               <AssigneeAvatar assigneeId={issue.assigneeId} assigneeName={issue.assigneeName} />
               <a href={issue.url} target="_blank" rel="noreferrer">
                 <span className={styles.issueKey}>{issue.issueKey}</span> {issue.summary}

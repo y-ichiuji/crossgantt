@@ -18,17 +18,20 @@
   min-width: max-content;
 }
 
-.background,
-.foreground {
+/*
+ * 土日・今日・月境界を描く背景レイヤー。
+ *
+ * z-index: 0 なので、固定表示の課題名カラム（.rowHead, z-index 2）より
+ * 必ず奥になる。横スクロールして今日の列がカラムの位置に来ても、
+ * 課題キーと件名の上に色が乗ることはない。
+ */
+.background {
   position: absolute;
   top: 0;
   bottom: 0;
   left: var(--row-head-width);
   width: var(--timeline-width);
   pointer-events: none;
-}
-
-.background {
   z-index: 0;
   /*
    * 日付（または週）ごとの薄い罫線。
@@ -41,16 +44,6 @@
     transparent 1px,
     transparent var(--grid-step)
   );
-}
-
-/*
- * 今日線はバーより手前に置きたいので、背景とは別のレイヤーにする。
- * ただし固定表示の課題名カラム（.rowHead, z-index 2）よりは奥に置く。
- * 手前にすると、横スクロールして今日線がカラムの位置に来たときに
- * 課題キーと件名の上へ赤い線が重なって読めなくなる。
- */
-.foreground {
-  z-index: 1;
 }
 
 .weekend {
@@ -68,13 +61,14 @@
   background: var(--border);
 }
 
+/* 今日は線ではなく列そのものを塗って示す。幅は JS 側から渡す。 */
 .today {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 2px;
-  background: var(--today);
-  opacity: 0.75;
+  background: var(--today-band);
+  border-left: 1px solid var(--today-edge);
+  border-right: 1px solid var(--today-edge);
 }
 
 .header {
@@ -122,6 +116,13 @@
   composes: ticks;
   color: var(--text-muted);
   font-size: 11px;
+}
+
+/* ヘッダーは不透明で帯を覆い隠すため、目盛り側でも今日の列を示す。 */
+.ticksMinor .tick[data-today='true'] {
+  background: var(--today-band);
+  color: var(--danger);
+  font-weight: 600;
 }
 
 .tick {
@@ -215,13 +216,6 @@
 
 .overdueBadge {
   composes: badgeOverdue from '../styles/controls.module.css';
-}
-
-.projectChip {
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
-  flex: none;
 }
 
 .issueLink {
