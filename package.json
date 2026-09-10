@@ -1,6 +1,6 @@
 {
   "name": "crossgantt",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "private": true,
   "description": "Backlog の複数プロジェクト・複数担当者の課題を 1 枚のガントチャートで横断表示するビューア",
   "license": "MIT",
