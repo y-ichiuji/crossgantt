@@ -1,0 +1,73 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":semanticCommitTypeAll(chore)"],
+  "timezone": "Asia/Tokyo",
+  "baseBranchPatterns": ["develop"],
+  "labels": ["dependencies"],
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 2,
+  "schedule": ["* 0-6 * * 1"],
+  "rangeStrategy": "pin",
+  "commitMessageAction": "更新",
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["* 0-6 * * 1"]
+  },
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "labels": ["security"],
+    "schedule": ["at any time"],
+    "prPriority": 10,
+    "minimumReleaseAge": null
+  },
+  "osvVulnerabilityAlerts": true,
+  "minimumReleaseAge": "3 days",
+  "packageRules": [
+    {
+      "description": "devDependencies のパッチ・マイナーは CI が通れば自動マージする",
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["patch", "minor"],
+      "automerge": true,
+      "automergeType": "pr",
+      "platformAutomerge": true
+    },
+    {
+      "description": "本番依存とメジャー更新は必ず人が確認する",
+      "matchDepTypes": ["dependencies"],
+      "automerge": false
+    },
+    {
+      "matchUpdateTypes": ["major"],
+      "automerge": false,
+      "addLabels": ["major"]
+    },
+    {
+      "description": "React 関連はまとめて上げる（型定義と本体のずれを避けるため）",
+      "groupName": "react",
+      "matchPackageNames": ["react", "react-dom", "@types/react", "@types/react-dom"]
+    },
+    {
+      "description": "Cloudflare 関連はまとめて上げる",
+      "groupName": "cloudflare",
+      "matchPackageNames": ["wrangler", "@cloudflare/vite-plugin"]
+    },
+    {
+      "description": "oxc ツールチェーンはまとめて上げる",
+      "groupName": "oxc",
+      "matchPackageNames": ["oxlint", "oxfmt", "oxlint-tsgolint"]
+    },
+    {
+      "description": "Vitest 関連はまとめて上げる",
+      "groupName": "vitest",
+      "matchPackageNames": ["vitest", "@vitest/**", "happy-dom", "@testing-library/**"]
+    },
+    {
+      "description": "GitHub Actions は毎週まとめて上げる",
+      "matchManagers": ["github-actions"],
+      "groupName": "github-actions",
+      "automerge": true,
+      "automergeType": "pr",
+      "platformAutomerge": true
+    }
+  ]
+}
