@@ -2,7 +2,8 @@ import { render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { makeIssue } from '../../shared/test-fixtures'
-import { IssueTooltip, type TooltipState } from './IssueTooltip'
+import { IssueTooltip } from './IssueTooltip'
+import type { TooltipState } from './IssueTooltip'
 
 function state(overrides: Partial<TooltipState> = {}): TooltipState {
   return { issue: makeIssue(), x: 100, y: 200, overdue: false, ...overrides }
@@ -37,7 +38,7 @@ describe('IssueTooltip', () => {
 
   it('遅延なら期間に印を付ける', () => {
     render(<IssueTooltip state={state({ overdue: true })} />)
-    expect(screen.getByText(/（遅延）/).getAttribute('data-overdue')).toBe('true')
+    expect(screen.getByText(/（遅延）/u).getAttribute('data-overdue')).toBe('true')
   })
 
   it('担当者・状態・工数を表示する', () => {

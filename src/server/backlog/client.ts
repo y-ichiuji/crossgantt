@@ -41,9 +41,12 @@ export type BacklogClientOptions = {
  * タイムアウトしてユーザー体験を損なう。上限を超える場合は待たずに
  * 429 をそのままクライアントへ返し、UI 側で案内する。
  */
-const MAX_RETRY_WAIT_MS = 8_000
+const MAX_RETRY_WAIT_MS = 8000
 
-const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+const defaultSleep = (ms: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, ms)
+  })
 
 export class BacklogClient {
   readonly space: string
@@ -167,8 +170,8 @@ export class BacklogClient {
             Authorization: `Bearer ${this.accessToken}`
           }
         })
-      } catch (cause) {
-        const message = cause instanceof Error ? cause.message : String(cause)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
         throw new BacklogApiError(502, 'Backlog への接続に失敗しました', this.mask(message))
       }
 
@@ -195,18 +198,24 @@ export class BacklogClient {
 
 function describeStatus(status: number): string {
   switch (status) {
-    case 400:
+    case 400: {
       return 'Backlog へのリクエストが不正です'
-    case 401:
+    }
+    case 401: {
       return 'Backlog の認証が切れています。ログインし直してください'
-    case 403:
+    }
+    case 403: {
       return 'この操作を行う権限がありません'
-    case 404:
+    }
+    case 404: {
       return '指定されたリソースが見つかりません'
-    case 429:
+    }
+    case 429: {
       return 'Backlog のレート制限に達しました。しばらく待ってから再読込してください'
-    default:
+    }
+    default: {
       return status >= 500 ? 'Backlog 側でエラーが発生しました' : 'Backlog API の呼び出しに失敗しました'
+    }
   }
 }
 

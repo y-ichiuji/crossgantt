@@ -34,7 +34,7 @@ describe('FilterBar', () => {
 
   it('選択肢が空でも壊れない', () => {
     setup({ projects: [], members: [], statuses: [] })
-    expect(screen.getAllByRole('button', { name: /選択肢がありません/ }).length).toBeGreaterThan(0)
+    expect(screen.getAllByRole('button', { name: /選択肢がありません/u }).length).toBeGreaterThan(0)
   })
 
   it('プロジェクトを選ぶと数値の配列で通知する', async () => {

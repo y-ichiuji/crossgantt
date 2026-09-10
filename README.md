@@ -43,7 +43,7 @@ Backlog の **OAuth 2.0** でログインします。
 
 [Backlog Developer サイト](https://backlog.com/developer/applications/)でアプリを登録し、リダイレクト URI に次を設定します。
 
-```
+```text
 https://<worker のドメイン>/api/auth/callback
 ```
 
@@ -86,6 +86,10 @@ pnpm dev           # http://localhost:5173
 | `pnpm deploy`       | Cloudflare Workers へデプロイ           |
 | `pnpm lint`         | oxlint（type-aware ルール込み）         |
 | `pnpm lint:fix`     | oxlint の自動修正                       |
+| `pnpm lint:css`     | stylelint による CSS の検査             |
+| `pnpm lint:css:fix` | stylelint の自動修正                    |
+| `pnpm lint:md`      | markdownlint による Markdown の検査     |
+| `pnpm lint:md:fix`  | markdownlint の自動修正                 |
 | `pnpm lint:actions` | actionlint による GitHub Actions の検査 |
 | `pnpm spellcheck`   | cspell によるスペルチェック             |
 | `pnpm format`       | oxfmt による整形                        |
@@ -101,7 +105,7 @@ pnpm dev           # http://localhost:5173
 
 テストは実装ファイルと同じディレクトリに `*.test.ts(x)` として置いています。
 
-```
+```text
 src/
   index.tsx              Hono のエントリ。SSR シェルと /api のマウント
   server/
@@ -159,11 +163,11 @@ docs/design.md           設計ドキュメント
 
 GitHub Actions で次を回しています。
 
-| ワークフロー | 契機                                      | 内容                                                                                                    |
-| ------------ | ----------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `ci.yml`     | `main` への push、すべての PR             | 整形の確認 → lint → actionlint → スペルチェック → 型チェック → テスト、別ジョブでビルドとスモークテスト |
-| `deploy.yml` | **CI と CodeQL が `main` で成功したあと** | Cloudflare Workers へデプロイし、公開後にスモークテスト                                                 |
-| `codeql.yml` | `main` への push、すべての PR、毎週       | CodeQL によるコードの脆弱性スキャン                                                                     |
+| ワークフロー | 契機                                      | 内容                                                                                                                       |
+| ------------ | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `ci.yml`     | `main` への push、すべての PR             | 整形の確認 → lint（TS / CSS / Markdown / Actions）→ スペルチェック → 型チェック → テスト、別ジョブでビルドとスモークテスト |
+| `deploy.yml` | **CI と CodeQL が `main` で成功したあと** | Cloudflare Workers へデプロイし、公開後にスモークテスト                                                                    |
+| `codeql.yml` | `main` への push、すべての PR、毎週       | CodeQL によるコードの脆弱性スキャン                                                                                        |
 
 すべての action はタグではなくコミットハッシュで固定しています（Renovate がハッシュごと更新します）。
 
@@ -222,7 +226,30 @@ GitHub Flow に沿っています。
 
 Hono + React 19 + Vite + Cloudflare Workers（セッション保存に Workers KV）。ガントチャートは flex 行 + 絶対配置バーで自前実装しており、外部のガントライブラリには依存していません。
 
-lint は oxlint（type-aware ルールを有効化）、整形は oxfmt、テストは Vitest です。依存パッケージのバージョンはすべて完全固定し、Renovate で定期的に更新します。
+整形は oxfmt に一本化しています。TypeScript / JavaScript だけでなく CSS・Markdown・JSON・YAML も
+oxfmt が扱うため、整形ツールはこれ 1 つです。テストは Vitest。依存パッケージのバージョンは
+すべて完全固定し、Renovate で定期的に更新します。
+
+lint は対象ごとに使い分けています。
+
+| 対象                    | ツール                                 |
+| ----------------------- | -------------------------------------- |
+| TypeScript / JavaScript | oxlint（type-aware ルールを有効化）    |
+| CSS                     | stylelint（stylelint-config-standard） |
+| Markdown                | markdownlint-cli2                      |
+| GitHub Actions          | actionlint                             |
+| 全ファイルのスペル      | cspell                                 |
+
+oxlint は `correctness` / `suspicious` / `pedantic` をエラー、`perf` を警告として有効にし、
+`typescript` / `unicorn` / `oxc` / `import` / `promise` / `react` / `jsx-a11y` / `vitest` /
+`jsdoc` / `node` の各プラグインを読み込んでいます。`style` と `restriction` は
+「三項演算子を禁止する」「マジックナンバーを禁止する」といった、このコードベースの書き方と
+真っ向から衝突するルールが大半のため、有用なものだけを個別に有効化しています。
+無効にしたルールには `.oxlintrc.json` に理由を添えています。
+
+シェルスクリプトは意図的に置いていません。`.sh` を 1 つ残すと、そのためだけに
+shellcheck（インストール時にバイナリを取得する）を足すことになるため、
+Claude Code のフックも `scripts/format-and-lint-hook.mjs` として Node で書いています。
 
 > `oxlint --type-aware` は型情報を使う lint ルールを実行するもので、型エラー自体は検出しません。
 > そのため型検査は `tsc --noEmit`（`pnpm typecheck`）で別途行っています。

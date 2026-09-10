@@ -75,7 +75,7 @@ describe('hashKey', () => {
   })
 
   it('SHA-256 の 16 進表現を返す', async () => {
-    expect(await hashKey('x')).toMatch(/^[0-9a-f]{64}$/)
+    expect(await hashKey('x')).toMatch(/^[0-9a-f]{64}$/u)
   })
 })
 

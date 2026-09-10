@@ -4,7 +4,8 @@
 
 import type { MemberSummary, ProjectSummary, StatusGroup, Viewer } from '../../shared/types'
 import type { BacklogProject, BacklogStatus, BacklogUser } from './api-types'
-import { type BacklogClient, mapWithConcurrency } from './client'
+import { mapWithConcurrency } from './client'
+import type { BacklogClient } from './client'
 import { isClosedStatus } from './issues'
 
 /** マスタ取得の並列度。 */

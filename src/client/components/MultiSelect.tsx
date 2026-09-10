@@ -95,7 +95,7 @@ export function MultiSelect({ label, options, selected, onChange, emptyLabel, di
         ref={triggerRef}
         className={styles.trigger}
         onClick={() => setOpen((value) => !value)}
-        disabled={disabled || options.length === 0}
+        disabled={disabled === true || options.length === 0}
         aria-expanded={open}
         // 見出しの「プロジェクト」「担当者」「ステータス」と現在の選択状況を
         // 続けて読み上げさせる。見出しを結び付けないと、支援技術には

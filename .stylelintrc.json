@@ -1,0 +1,33 @@
+{
+  "extends": ["stylelint-config-standard"],
+  "ignoreFiles": ["dist/**", ".wrangler/**", "node_modules/**", "public/**", "skills/**"],
+  "rules": {
+    "selector-class-pattern": [
+      "^[a-z][a-zA-Z0-9]*$",
+      {
+        "message": "CSS Modules のクラス名は JS 側から styles.xxx で参照するため lowerCamelCase にしてください"
+      }
+    ],
+    "property-no-unknown": [
+      true,
+      {
+        "ignoreProperties": ["composes"]
+      }
+    ],
+    "value-keyword-case": [
+      "lower",
+      {
+        "ignoreProperties": ["composes"]
+      }
+    ],
+    "color-function-alias-notation": "with-alpha",
+    "custom-property-empty-line-before": null,
+    "declaration-empty-line-before": null,
+    "comment-empty-line-before": null,
+    "no-descending-specificity": null,
+    "alpha-value-notation": "number",
+    "color-function-notation": "legacy",
+    "color-hex-length": "long",
+    "declaration-block-no-redundant-longhand-properties": null
+  }
+}

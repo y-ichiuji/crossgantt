@@ -1,0 +1,16 @@
+{
+  // 整形は oxfmt が行うため、ここでは体裁ではなく内容の問題だけを見る。
+  "config": {
+    "default": true,
+    // 日本語の説明文は 1 行が長くなる。折り返しは oxfmt に任せる。
+    "MD013": false,
+    // 表や図の一部で生の HTML を使うことがある。
+    "MD033": false,
+    // 見出しと同じ文言が本文中に繰り返し現れることを許す。
+    "MD024": { "siblings_only": true }
+  },
+  "globs": ["**/*.md"],
+  // .gitignore に載っているものは対象外。取得してきた skills も同様に見ない。
+  "gitignore": true,
+  "ignores": ["node_modules/**", "dist/**", ".wrangler/**", "skills/**", ".agents/**"]
+}

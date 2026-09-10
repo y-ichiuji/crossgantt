@@ -40,6 +40,12 @@ jobs:
       - name: lint（type-aware）
         run: pnpm run lint
 
+      - name: CSS の lint
+        run: pnpm run lint:css
+
+      - name: Markdown の lint
+        run: pnpm run lint:md
+
       - name: GitHub Actions の lint
         run: pnpm run lint:actions
 

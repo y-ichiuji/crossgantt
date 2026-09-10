@@ -20,7 +20,7 @@ function stubFetch(responder: (url: string) => Response) {
 }
 
 function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+  return Response.json(body, { status })
 }
 
 function baseQuery(overrides: Partial<IssuesQuery> = {}): IssuesQuery {
@@ -56,26 +56,26 @@ describe('リクエストの共通挙動', () => {
 
   it('エラー時はサーバーのメッセージを ApiError にして投げる', async () => {
     stubFetch(() => json({ error: 'ログインしていません' }, 401))
-    const error = (await getProjects(false).catch((caught: unknown) => caught)) as ApiError
+    const thrown = (await getProjects(false).catch((error: unknown) => error)) as ApiError
 
-    expect(error).toBeInstanceOf(ApiError)
-    expect(error.status).toBe(401)
-    expect(error.message).toBe('ログインしていません')
-    expect(error.isUnauthorized).toBe(true)
+    expect(thrown).toBeInstanceOf(ApiError)
+    expect(thrown.status).toBe(401)
+    expect(thrown.message).toBe('ログインしていません')
+    expect(thrown.isUnauthorized).toBe(true)
   })
 
   it('detail も保持する', async () => {
     stubFetch(() => json({ error: 'まずい', detail: '詳細' }, 400))
-    const error = (await getProjects(false).catch((caught: unknown) => caught)) as ApiError
-    expect(error.detail).toBe('詳細')
-    expect(error.isUnauthorized).toBe(false)
+    const thrown = (await getProjects(false).catch((error: unknown) => error)) as ApiError
+    expect(thrown.detail).toBe('詳細')
+    expect(thrown.isUnauthorized).toBe(false)
   })
 
   it('JSON で無いエラー本文でもステータスから既定のメッセージを作る', async () => {
     stubFetch(() => new Response('boom', { status: 500 }))
-    const error = (await getProjects(false).catch((caught: unknown) => caught)) as ApiError
-    expect(error.status).toBe(500)
-    expect(error.message).toContain('500')
+    const thrown = (await getProjects(false).catch((error: unknown) => error)) as ApiError
+    expect(thrown.status).toBe(500)
+    expect(thrown.message).toContain('500')
   })
 })
 

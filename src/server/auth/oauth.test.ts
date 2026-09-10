@@ -6,10 +6,10 @@ import {
   exchangeCode,
   needsRefresh,
   OAuthError,
-  type OAuthConfig,
   refreshTokens,
   TOKEN_REFRESH_MARGIN_MS
 } from './oauth'
+import type { OAuthConfig } from './oauth'
 
 const SPACE = 'example.backlog.jp'
 const NOW = Date.parse('2026-09-10T00:00:00Z')

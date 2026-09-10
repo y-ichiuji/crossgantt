@@ -9,7 +9,8 @@
 import { parseBacklogDate } from '../../shared/date'
 import type { GanttIssue } from '../../shared/types'
 import type { BacklogCountResponse, BacklogIssue } from './api-types'
-import { BacklogApiError, type BacklogClient, mapWithConcurrency, type QueryParams } from './client'
+import { BacklogApiError, mapWithConcurrency } from './client'
+import type { BacklogClient, QueryParams } from './client'
 import { issueUrl } from './space'
 
 /** 課題検索 1 リクエストあたりの最大取得件数（Backlog API の上限）。 */
@@ -109,7 +110,7 @@ async function fetchQuery(
 
 /** Backlog の課題を描画用の形へ正規化する。 */
 export function normalizeIssue(space: string, projectKeys: Record<number, string>, issue: BacklogIssue): GanttIssue {
-  const projectKey = projectKeys[issue.projectId] ?? issue.issueKey.replace(/-\d+$/, '')
+  const projectKey = projectKeys[issue.projectId] ?? issue.issueKey.replace(/-\d+$/u, '')
   return {
     id: issue.id,
     issueKey: issue.issueKey,

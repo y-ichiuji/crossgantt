@@ -9,7 +9,7 @@
 const ALLOWED_SUFFIXES = ['.backlog.jp', '.backlog.com', '.backlogtool.com'] as const
 
 /** サブドメイン部分に許可する文字。 */
-const SUBDOMAIN_PATTERN = /^[a-z0-9][a-z0-9-]*$/
+const SUBDOMAIN_PATTERN = /^[a-z0-9][a-z0-9-]*$/u
 
 /**
  * スペースドメインを正規化して返す。許可されない値の場合は null。
@@ -22,8 +22,8 @@ export function normalizeSpace(input: string | null | undefined): string | null 
   }
 
   let value = input.trim().toLowerCase()
-  value = value.replace(/^https?:\/\//, '')
-  value = value.replace(/\/.*$/, '')
+  value = value.replace(/^https?:\/\//u, '')
+  value = value.replace(/\/.*$/u, '')
   // ポート番号や認証情報が付いたホストは受け付けない。
   if (value.includes(':') || value.includes('@')) {
     return null

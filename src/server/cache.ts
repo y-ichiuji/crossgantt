@@ -116,11 +116,8 @@ export async function withJsonCache<T>(
   }
 
   const value = await produce()
-  const response = new Response(JSON.stringify(value), {
-    headers: {
-      'Content-Type': 'application/json',
-      'Cache-Control': `max-age=${ttlSeconds}`
-    }
+  const response = Response.json(value, {
+    headers: { 'Cache-Control': `max-age=${ttlSeconds}` }
   })
   await cache.put(cacheKey, response)
   return value
