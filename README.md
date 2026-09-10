@@ -247,6 +247,20 @@ oxlint は `correctness` / `suspicious` / `pedantic` をエラー、`perf` を�
 真っ向から衝突するルールが大半のため、有用なものだけを個別に有効化しています。
 無効にしたルールには `.oxlintrc.json` に理由を添えています。
 
+oxlint 本体に無い検査は、外部の ESLint プラグインを `jsPlugins` として読み込んで補っています。
+
+| プラグイン                    | 何を見るか                                                           |
+| ----------------------------- | -------------------------------------------------------------------- |
+| eslint-plugin-react-hooks     | React Compiler 由来のルール（`refs`・`purity`・`immutability` など） |
+| eslint-plugin-css-modules     | `styles.xxx` が CSS 側にあるか、CSS 側に使われていないクラスが無いか |
+| eslint-plugin-regexp          | 正規表現の書き間違い（推奨セット 60 ルール）                         |
+| eslint-plugin-no-unsanitized  | `innerHTML` などへの安全でない代入                                   |
+| eslint-plugin-testing-library | Testing Library の使い方（`await` 漏れなど）                         |
+| eslint-plugin-sonarjs         | バグ・セキュリティ・正規表現の実行時間・テスト品質・認知的複雑度     |
+
+`jsPlugins` は oxlint 側で alpha 扱いかつ semver の対象外ですが、CSS Modules のクラス名の
+検証のように本体では代えの利かない検査があるため、例外として採用しています。
+
 シェルスクリプトは意図的に置いていません。`.sh` を 1 つ残すと、そのためだけに
 shellcheck（インストール時にバイナリを取得する）を足すことになるため、
 Claude Code のフックも `scripts/format-and-lint-hook.mjs` として Node で書いています。

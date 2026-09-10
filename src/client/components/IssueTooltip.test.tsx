@@ -10,6 +10,17 @@ function state(overrides: Partial<TooltipState> = {}): TooltipState {
 }
 
 describe('IssueTooltip', () => {
+  // innerWidth を差し替えたまま返すと、以降のテストが 1600px の環境を
+  // 前提に動いてしまい、実行順に依存した不安定な結果になる。必ず戻す。
+  const originalInnerWidth = Object.getOwnPropertyDescriptor(window, 'innerWidth')
+  afterEach(() => {
+    if (originalInnerWidth) {
+      Object.defineProperty(window, 'innerWidth', originalInnerWidth)
+    } else {
+      Reflect.deleteProperty(window, 'innerWidth')
+    }
+  })
+
   it('課題キーと件名を表示する', () => {
     render(<IssueTooltip state={state()} />)
     expect(screen.getByText('PJA-1')).toBeDefined()
@@ -66,17 +77,6 @@ describe('IssueTooltip', () => {
   it('マイルストーンが無ければ行ごと出さない', () => {
     render(<IssueTooltip state={state({ issue: makeIssue({ milestoneNames: [] }) })} />)
     expect(screen.queryByText('マイルストーン')).toBeNull()
-  })
-
-  // innerWidth を差し替えたまま返すと、以降のテストが 1600px の環境を
-  // 前提に動いてしまい、実行順に依存した不安定な結果になる。必ず戻す。
-  const originalInnerWidth = Object.getOwnPropertyDescriptor(window, 'innerWidth')
-  afterEach(() => {
-    if (originalInnerWidth) {
-      Object.defineProperty(window, 'innerWidth', originalInnerWidth)
-    } else {
-      Reflect.deleteProperty(window, 'innerWidth')
-    }
   })
 
   it('ビューポートの右端からはみ出さない', () => {

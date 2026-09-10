@@ -458,6 +458,21 @@ checkout する SHA は `workflow_run` のイベントから取るため、gate 
 
 oxlint のカテゴリは `correctness` / `suspicious` / `pedantic` をエラー、`perf` を警告として有効にしています。`style` と `restriction` は、`no-ternary`・`no-magic-numbers`・`oxc/no-async-await` のようにこのコードベースの書き方と衝突するルールが大半のため、カテゴリごとの有効化はせず、有用なものを個別に指定しています。`react-perf` プラグインは、ガントのバーが位置と幅を `style` 属性で受け取る都合上、`jsx-no-new-object-as-prop` が避けようのない検出を大量に出すため有効にしていません。
 
+oxlint 本体に無い検査は、外部の ESLint プラグインを `jsPlugins` として読み込んで補っています。`jsPlugins` は oxlint 側で alpha 扱いかつ semver の対象外であり、すべてのバージョンを固定している本リポジトリの方針とは本来かみ合いませんが、本体では代えの利かない検査があるため例外として採用しています。
+
+| プラグイン                    | 何を見るか                                                                                                                                  |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| eslint-plugin-css-modules     | `styles.xxx` が CSS 側に存在するか、CSS 側に使われていないクラスが無いか。CSS Modules はタイプミスしても `undefined` になるだけで気付けない |
+| eslint-plugin-react-hooks     | React Compiler 由来のルール。`refs`（描画中の ref 参照）・`purity`・`immutability` など、oxlint 本体が持たないもの                          |
+| eslint-plugin-regexp          | 正規表現の書き間違い。推奨セット 60 ルールをそのまま採用                                                                                    |
+| eslint-plugin-no-unsanitized  | `innerHTML` などへの安全でない代入                                                                                                          |
+| eslint-plugin-testing-library | Testing Library の使い方。`no-node-access` だけは、テスト環境で CSS Modules のクラス名が `undefined` になるため無効にしている               |
+| eslint-plugin-sonarjs         | バグ・セキュリティ・正規表現の実行時間・テスト品質・認知的複雑度。279 ルールのうち本体と重複しないものだけを選択                            |
+
+導入時に `sonarjs/super-linear-regex` が `normalizeSpace` のパス除去（`/\/.*$/`）を指摘しました。開始位置ごとに `.*` を試すため、スラッシュの多い入力で実行時間が入力長の二乗に近づくもので、この値はログイン画面から渡ってくるユーザー入力です。`indexOf` による切り出しに置き換えています。
+
+lint の実行時間は 0.6 秒から 2.0 秒に増えました（`pnpm lint`、87 ファイル）。
+
 ## 15. 将来拡張
 
 - ガントバーのドラッグによる `startDate` / `dueDate` の更新（`PATCH /api/v2/issues/{id}`、楽観的更新 + 失敗時ロールバック）

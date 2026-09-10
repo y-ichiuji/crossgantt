@@ -157,6 +157,18 @@ export class BacklogClient {
     return (await response.json()) as T
   }
 
+  /**
+   * この応答を待って再試行すべきなら待ち時間（ミリ秒）を返す。
+   * 再試行しない場合は null。
+   */
+  private retryDelay(response: Response, attempt: number): number | null {
+    const shouldRetry = response.status === 429 || response.status >= 500
+    if (!shouldRetry || attempt >= this.maxRetries) {
+      return null
+    }
+    return response.status === 429 ? this.retryWaitMs(response, attempt) : 500 * 2 ** attempt
+  }
+
   private async request(path: string, params: QueryParams, accept: string): Promise<Response> {
     const url = this.buildUrl(path, params)
 
@@ -181,13 +193,10 @@ export class BacklogClient {
         return response
       }
 
-      const shouldRetry = response.status === 429 || response.status >= 500
-      if (shouldRetry && attempt < this.maxRetries) {
-        const wait = response.status === 429 ? this.retryWaitMs(response, attempt) : 500 * 2 ** attempt
-        if (wait !== null) {
-          await this.sleep(wait)
-          continue
-        }
+      const wait = this.retryDelay(response, attempt)
+      if (wait !== null) {
+        await this.sleep(wait)
+        continue
       }
 
       const body = await response.text().catch(() => '')

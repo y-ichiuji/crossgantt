@@ -23,7 +23,12 @@ export function normalizeSpace(input: string | null | undefined): string | null 
 
   let value = input.trim().toLowerCase()
   value = value.replace(/^https?:\/\//u, '')
-  value = value.replace(/\/.*$/u, '')
+  // パス部分を落とす。`/\/.*$/` だと開始位置ごとに `.*` を試すため、
+  // スラッシュの多い入力で実行時間が入力長の二乗に近づく。
+  const slash = value.indexOf('/')
+  if (slash !== -1) {
+    value = value.slice(0, slash)
+  }
   // ポート番号や認証情報が付いたホストは受け付けない。
   if (value.includes(':') || value.includes('@')) {
     return null

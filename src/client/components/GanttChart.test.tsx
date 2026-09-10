@@ -256,7 +256,7 @@ describe('ツールチップ', () => {
     await user.tab()
     await user.tab()
     await user.tab()
-    expect(screen.queryByRole('tooltip')).not.toBeNull()
+    expect(screen.getByRole('tooltip')).toBeDefined()
   })
 })
 
