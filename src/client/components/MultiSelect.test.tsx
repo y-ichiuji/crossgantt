@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -138,12 +138,46 @@ describe('MultiSelect', () => {
     expect(onChange).not.toHaveBeenCalled()
   })
 
-  it('Enter は選択を外さない（トグルではない）', async () => {
+  it('選択済みの候補で Enter を押すと選択が外れる', async () => {
     const { onChange, user } = setup({ searchable: true, selected: ['1'] })
     await user.click(screen.getByRole('button', { name: /1件選択/u }))
     await user.type(screen.getByPlaceholderText('絞り込み'), 'プロジェクトA')
     await user.keyboard('{Enter}')
+    expect(onChange).toHaveBeenCalledWith([])
+  })
+
+  it('Enter の対象が選択済みなら「解除」と出す', async () => {
+    const { user } = setup({ searchable: true, selected: ['3'] })
+    await user.click(screen.getByRole('button', { name: /1件選択/u }))
+    await user.type(screen.getByPlaceholderText('絞り込み'), 'その他')
+    expect(screen.getByText('Enter で「その他」を解除')).toBeDefined()
+  })
+
+  it('日本語入力の変換を確定する Enter では選択しない', async () => {
+    const { onChange, user } = setup({ searchable: true })
+    await user.click(screen.getByRole('button', { name: /未選択/u }))
+    const search = screen.getByPlaceholderText('絞り込み')
+    // IME の変換中に押された Enter は isComposing が立つ。
+    fireEvent.keyDown(search, { key: 'Enter', isComposing: true })
     expect(onChange).not.toHaveBeenCalled()
+
+    // 確定後の Enter は通常どおり効く。
+    fireEvent.keyDown(search, { key: 'Enter' })
+    expect(onChange).toHaveBeenCalledWith(['1'])
+  })
+
+  it('選択済みの選択肢を一覧の先頭に寄せる', async () => {
+    const { user } = setup({ selected: ['3'] })
+    await user.click(screen.getByRole('button', { name: /1件選択/u }))
+    const labels = [...document.querySelectorAll('li')].map((item) => item.textContent)
+    expect(labels).toEqual(['その他', 'プロジェクトA', 'プロジェクトB'])
+  })
+
+  it('先頭へ寄せても、選択済み同士・未選択同士の並びは変えない', async () => {
+    const { user } = setup({ selected: ['2', '3'] })
+    await user.click(screen.getByRole('button', { name: /2件選択/u }))
+    const labels = [...document.querySelectorAll('li')].map((item) => item.textContent)
+    expect(labels).toEqual(['プロジェクトB', 'その他', 'プロジェクトA'])
   })
 
   it('絞り込んでいなければ Enter は一覧の先頭を選ぶ', async () => {
