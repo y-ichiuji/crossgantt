@@ -1,24 +1,19 @@
 /**
  * Worker 上のプロキシ API を呼び出すクライアント。
  *
- * Backlog のスペースと API キーは毎回リクエストヘッダーで送る。
- * サーバー側には保存されない。
+ * 認証は HttpOnly Cookie のセッションで行うため、
+ * ブラウザ側でアクセストークンを保持することはない。
  */
 
 import type {
   ApiErrorBody,
+  IssuesQuery,
   IssuesResponse,
   MemberSummary,
   ProjectSummary,
-  IssuesQuery,
   StatusGroup,
   Viewer
 } from '../shared/types'
-
-export type Connection = {
-  space: string
-  apiKey: string
-}
 
 export class ApiError extends Error {
   readonly status: number
@@ -30,27 +25,15 @@ export class ApiError extends Error {
     this.status = status
     this.detail = detail
   }
-}
 
-function authHeaders(connection: Connection): Record<string, string> {
-  return {
-    'X-Backlog-Space': connection.space,
-    'X-Backlog-Api-Key': connection.apiKey
+  /** 未ログイン、またはセッション切れ。 */
+  get isUnauthorized(): boolean {
+    return this.status === 401
   }
 }
 
-async function request<T>(
-  connection: Connection,
-  path: string,
-  init: RequestInit & { signal?: AbortSignal } = {}
-): Promise<T> {
-  // HeadersInit は配列形式も取りうるため、オブジェクトのスプレッドで合成してはいけない。
-  const headers = new Headers(init.headers)
-  for (const [key, value] of Object.entries(authHeaders(connection))) {
-    headers.set(key, value)
-  }
-
-  const response = await fetch(path, { ...init, headers })
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(path, { ...init, credentials: 'same-origin' })
 
   if (!response.ok) {
     let body: ApiErrorBody | null = null
@@ -62,21 +45,37 @@ async function request<T>(
     throw new ApiError(response.status, body?.error ?? `リクエストに失敗しました (${response.status})`, body?.detail)
   }
 
+  if (response.status === 204) {
+    return undefined as T
+  }
+
   return (await response.json()) as T
 }
 
-/** 接続確認。API キーが有効なら接続ユーザー情報が返る。 */
-export function connect(connection: Connection, signal?: AbortSignal): Promise<Viewer> {
-  return request<Viewer>(connection, '/api/connect', { method: 'POST', signal })
+/** 現在のセッション情報。未ログインなら ApiError(401) を投げる。 */
+export async function getSession(signal?: AbortSignal): Promise<Viewer> {
+  return request<Viewer>('/api/auth/session', { signal })
 }
 
-export function getProjects(connection: Connection, refresh: boolean, signal?: AbortSignal): Promise<ProjectSummary[]> {
+/** Backlog の認可画面へ遷移する。認可後は現在の URL に戻る。 */
+export function startLogin(space: string): void {
+  const params = new URLSearchParams({
+    space,
+    returnTo: `${window.location.pathname}${window.location.search}`
+  })
+  window.location.href = `/api/auth/login?${params.toString()}`
+}
+
+export async function logout(): Promise<void> {
+  await request<void>('/api/auth/logout', { method: 'POST' })
+}
+
+export async function getProjects(refresh: boolean, signal?: AbortSignal): Promise<ProjectSummary[]> {
   const query = refresh ? '?refresh=1' : ''
-  return request<ProjectSummary[]>(connection, `/api/projects${query}`, { signal })
+  return request<ProjectSummary[]>(`/api/projects${query}`, { signal })
 }
 
-export function getMembers(
-  connection: Connection,
+export async function getMembers(
   projectIds: number[],
   refresh: boolean,
   signal?: AbortSignal
@@ -85,11 +84,10 @@ export function getMembers(
   if (refresh) {
     params.set('refresh', '1')
   }
-  return request<MemberSummary[]>(connection, `/api/members?${params}`, { signal })
+  return request<MemberSummary[]>(`/api/members?${params.toString()}`, { signal })
 }
 
-export function getStatuses(
-  connection: Connection,
+export async function getStatuses(
   projectIds: number[],
   refresh: boolean,
   signal?: AbortSignal
@@ -98,37 +96,32 @@ export function getStatuses(
   if (refresh) {
     params.set('refresh', '1')
   }
-  return request<StatusGroup[]>(connection, `/api/statuses?${params}`, { signal })
+  return request<StatusGroup[]>(`/api/statuses?${params.toString()}`, { signal })
 }
 
-export function getIssues(
-  connection: Connection,
-  filter: IssuesQuery,
-  refresh: boolean,
-  signal?: AbortSignal
-): Promise<IssuesResponse> {
+export async function getIssues(query: IssuesQuery, refresh: boolean, signal?: AbortSignal): Promise<IssuesResponse> {
   const params = new URLSearchParams({
-    projectIds: filter.projectIds.join(','),
-    from: filter.from,
-    to: filter.to
+    projectIds: query.projectIds.join(','),
+    from: query.from,
+    to: query.to
   })
-  if (filter.assigneeIds.length > 0) {
-    params.set('assigneeIds', filter.assigneeIds.join(','))
+  if (query.assigneeIds.length > 0) {
+    params.set('assigneeIds', query.assigneeIds.join(','))
   }
-  if (filter.statusNames.length > 0) {
-    params.set('statuses', filter.statusNames.join(','))
+  if (query.statusNames.length > 0) {
+    params.set('statuses', query.statusNames.join(','))
   }
-  if (filter.keyword) {
-    params.set('keyword', filter.keyword)
+  if (query.keyword) {
+    params.set('keyword', query.keyword)
   }
-  if (filter.includeClosed) {
+  if (query.includeClosed) {
     params.set('closed', '1')
   }
-  if (filter.includeNoDate) {
+  if (query.includeNoDate) {
     params.set('nodate', '1')
   }
   if (refresh) {
     params.set('refresh', '1')
   }
-  return request<IssuesResponse>(connection, `/api/issues?${params}`, { signal })
+  return request<IssuesResponse>(`/api/issues?${params.toString()}`, { signal })
 }

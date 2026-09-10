@@ -4,9 +4,9 @@ import { describe, expect, it } from 'vitest'
 import { defaultFilter } from '../shared/filter'
 import type { GanttIssue } from '../shared/types'
 import App from './app'
-import { ConnectPanel } from './components/ConnectPanel'
 import { FilterBar } from './components/FilterBar'
 import { GanttChart } from './components/GanttChart'
+import { LoginPanel } from './components/LoginPanel'
 
 /**
  * 初回レンダリングが例外を投げないことを確認する。
@@ -40,21 +40,20 @@ function makeIssue(overrides: Partial<GanttIssue> = {}): GanttIssue {
   }
 }
 
-describe('ConnectPanel', () => {
-  it('初期表示で入力欄と注意書きを出す', () => {
+describe('LoginPanel', () => {
+  it('初期表示でスペース入力欄とログインボタンを出す', () => {
     const html = renderToStaticMarkup(
-      <ConnectPanel initial={null} onSubmit={() => {}} connecting={false} error={null} />
+      <LoginPanel initialSpace="" onSubmit={() => {}} submitting={false} error={null} />
     )
     expect(html).toContain('スペースドメイン')
-    expect(html).toContain('API キー')
-    expect(html).toContain('localStorage')
+    expect(html).toContain('Backlog でログイン')
   })
 
   it('エラーを表示する', () => {
     const html = renderToStaticMarkup(
-      <ConnectPanel initial={null} onSubmit={() => {}} connecting={false} error="API キーが正しくありません" />
+      <LoginPanel initialSpace="" onSubmit={() => {}} submitting={false} error="認可の有効期限が切れました" />
     )
-    expect(html).toContain('API キーが正しくありません')
+    expect(html).toContain('認可の有効期限が切れました')
   })
 })
 
@@ -164,9 +163,9 @@ describe('GanttChart', () => {
 })
 
 describe('App', () => {
-  it('接続情報が無ければ接続画面を出す', () => {
+  it('セッション確認が終わるまでは読み込み中を表示する', () => {
+    // renderToStaticMarkup では useEffect が走らないため、初期状態が描画される。
     const html = renderToStaticMarkup(<App />)
-    expect(html).toContain('CrossGantt for Backlog')
-    expect(html).toContain('スペースドメイン')
+    expect(html).toContain('読み込み中')
   })
 })

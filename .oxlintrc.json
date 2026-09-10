@@ -91,7 +91,7 @@
   },
   "overrides": [
     {
-      "files": ["**/*.test.ts", "**/*.test.tsx"],
+      "files": ["**/*.test.ts", "**/*.test.tsx", "**/test-utils.ts"],
       "rules": {
         "typescript/no-unsafe-assignment": "off",
         "typescript/no-unsafe-argument": "off",
@@ -102,7 +102,11 @@
         "typescript/no-explicit-any": "off",
         "typescript/unbound-method": "off",
         "typescript/require-await": "off",
-        "vitest/require-mock-type-parameters": "off"
+        "vitest/require-mock-type-parameters": "off",
+        "typescript/no-unnecessary-type-assertion": "off",
+        "typescript/non-nullable-type-assertion-style": "off",
+        "typescript/no-base-to-string": "off",
+        "unicorn/consistent-function-scoping": "off"
       }
     },
     {

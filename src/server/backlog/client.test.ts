@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { BacklogApiError, BacklogClient, mapWithConcurrency } from './client'
 
 const SPACE = 'example.backlog.jp'
-const API_KEY = 'super-secret-key'
+const API_KEY = 'super-secret-token'
 
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -14,21 +14,36 @@ function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
 }
 
 describe('BacklogClient.get', () => {
-  it('API キーをクエリに付けて呼び出す', async () => {
+  it('アクセストークンを Authorization ヘッダーで送る', async () => {
     const fetchImpl = vi.fn(async () => jsonResponse({ ok: true })) as unknown as typeof fetch
-    const client = new BacklogClient({ space: SPACE, apiKey: API_KEY, fetchImpl })
+    const client = new BacklogClient({ space: SPACE, accessToken: API_KEY, fetchImpl })
 
     await client.get('/users/myself')
 
-    const called = new URL((fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0] as string)
+    const mock = fetchImpl as unknown as ReturnType<typeof vi.fn>
+    const called = new URL(mock.mock.calls[0][0] as string)
     expect(called.origin).toBe(`https://${SPACE}`)
     expect(called.pathname).toBe('/api/v2/users/myself')
-    expect(called.searchParams.get('apiKey')).toBe(API_KEY)
+
+    const init = mock.mock.calls[0][1] as RequestInit
+    const headers = init.headers as Record<string, string>
+    expect(headers.Authorization).toBe(`Bearer ${API_KEY}`)
+  })
+
+  it('アクセストークンを URL に含めない', async () => {
+    const fetchImpl = vi.fn(async () => jsonResponse({ ok: true })) as unknown as typeof fetch
+    const client = new BacklogClient({ space: SPACE, accessToken: API_KEY, fetchImpl })
+
+    await client.get('/users/myself')
+
+    const called = (fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0] as string
+    expect(called).not.toContain(API_KEY)
+    expect(new URL(called).searchParams.has('apiKey')).toBe(false)
   })
 
   it('配列パラメータを繰り返し形式で展開する', async () => {
     const fetchImpl = vi.fn(async () => jsonResponse([])) as unknown as typeof fetch
-    const client = new BacklogClient({ space: SPACE, apiKey: API_KEY, fetchImpl })
+    const client = new BacklogClient({ space: SPACE, accessToken: API_KEY, fetchImpl })
 
     await client.get('/issues', { 'projectId[]': [1, 2], count: 100, keyword: undefined })
 
@@ -51,7 +66,7 @@ describe('BacklogClient.get', () => {
         }
       )
     ) as unknown as typeof fetch
-    const client = new BacklogClient({ space: SPACE, apiKey: API_KEY, fetchImpl })
+    const client = new BacklogClient({ space: SPACE, accessToken: API_KEY, fetchImpl })
 
     await client.get('/issues')
 
@@ -68,7 +83,7 @@ describe('BacklogClient.get', () => {
       return jsonResponse({ ok: true })
     }) as unknown as typeof fetch
     const sleep = vi.fn(async () => {})
-    const client = new BacklogClient({ space: SPACE, apiKey: API_KEY, fetchImpl, sleep })
+    const client = new BacklogClient({ space: SPACE, accessToken: API_KEY, fetchImpl, sleep })
 
     await expect(client.get('/issues')).resolves.toEqual({ ok: true })
     expect(sleep).toHaveBeenCalledWith(1000)
@@ -80,7 +95,7 @@ describe('BacklogClient.get', () => {
       async () => new Response('too many', { status: 429, headers: { 'Retry-After': '300' } })
     ) as unknown as typeof fetch
     const sleep = vi.fn(async () => {})
-    const client = new BacklogClient({ space: SPACE, apiKey: API_KEY, fetchImpl, sleep })
+    const client = new BacklogClient({ space: SPACE, accessToken: API_KEY, fetchImpl, sleep })
 
     await expect(client.get('/issues')).rejects.toThrow(BacklogApiError)
     expect(sleep).not.toHaveBeenCalled()
@@ -89,7 +104,7 @@ describe('BacklogClient.get', () => {
   it('リトライ上限を超えたらエラーになる', async () => {
     const fetchImpl = vi.fn(async () => new Response('boom', { status: 500 })) as unknown as typeof fetch
     const sleep = vi.fn(async () => {})
-    const client = new BacklogClient({ space: SPACE, apiKey: API_KEY, fetchImpl, sleep, maxRetries: 2 })
+    const client = new BacklogClient({ space: SPACE, accessToken: API_KEY, fetchImpl, sleep, maxRetries: 2 })
 
     await expect(client.get('/issues')).rejects.toThrow(BacklogApiError)
     expect(client.requestCount).toBe(3)
@@ -97,23 +112,23 @@ describe('BacklogClient.get', () => {
 
   it('401 はリトライせず、分かりやすいメッセージにする', async () => {
     const fetchImpl = vi.fn(async () => new Response('unauthorized', { status: 401 })) as unknown as typeof fetch
-    const client = new BacklogClient({ space: SPACE, apiKey: API_KEY, fetchImpl })
+    const client = new BacklogClient({ space: SPACE, accessToken: API_KEY, fetchImpl })
 
     await expect(client.get('/users/myself')).rejects.toMatchObject({
       status: 401,
-      message: 'API キーが正しくありません'
+      message: 'Backlog の認証が切れています。ログインし直してください'
     })
     expect(client.requestCount).toBe(1)
   })
 
-  it('エラー本文に API キーが含まれてもマスクする', async () => {
+  it('エラー本文にアクセストークンが含まれてもマスクする', async () => {
     const fetchImpl = vi.fn(
-      async () => new Response(`invalid apiKey=${API_KEY}`, { status: 400 })
+      async () => new Response(`invalid token=${API_KEY}`, { status: 400 })
     ) as unknown as typeof fetch
-    const client = new BacklogClient({ space: SPACE, apiKey: API_KEY, fetchImpl })
+    const client = new BacklogClient({ space: SPACE, accessToken: API_KEY, fetchImpl })
 
     const error = (await client.get('/issues').catch((caught: unknown) => caught)) as BacklogApiError
-    expect(error.detail).toBe('invalid apiKey=***')
+    expect(error.detail).toBe('invalid token=***')
     expect(error.detail).not.toContain(API_KEY)
   })
 
@@ -129,7 +144,7 @@ describe('BacklogClient.get', () => {
     }
 
     try {
-      const client = new BacklogClient({ space: SPACE, apiKey: API_KEY })
+      const client = new BacklogClient({ space: SPACE, accessToken: API_KEY })
       await client.get('/users/myself')
     } finally {
       globalThis.fetch = original
@@ -143,7 +158,7 @@ describe('BacklogClient.get', () => {
     const fetchImpl = vi.fn(async () => {
       throw new TypeError('network down')
     }) as unknown as typeof fetch
-    const client = new BacklogClient({ space: SPACE, apiKey: API_KEY, fetchImpl })
+    const client = new BacklogClient({ space: SPACE, accessToken: API_KEY, fetchImpl })
 
     await expect(client.get('/issues')).rejects.toMatchObject({ status: 502 })
   })
