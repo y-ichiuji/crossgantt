@@ -37,8 +37,7 @@ describe('IssueTooltip', () => {
 
   it('遅延なら期間に印を付ける', () => {
     render(<IssueTooltip state={state({ overdue: true })} />)
-    const period = screen.getByText(/（遅延）/)
-    expect(period.className).toContain('is-overdue')
+    expect(screen.getByText(/（遅延）/).getAttribute('data-overdue')).toBe('true')
   })
 
   it('担当者・状態・工数を表示する', () => {

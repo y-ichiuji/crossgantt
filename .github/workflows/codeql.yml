@@ -1,0 +1,43 @@
+name: CodeQL
+
+# Renovate が見るのは「依存パッケージの既知の脆弱性」だけなので、
+# 自分たちが書いたコードの脆弱性は CodeQL（GitHub のコードスキャン）で拾う。
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # 依存を変えていなくても新しいクエリで検出されることがあるため、毎週回す。
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: 解析
+    runs-on: ubuntu-latest
+    permissions:
+      # 検出結果を Security タブへ書き込む。
+      security-events: write
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: 初期化
+        uses: github/codeql-action/init@faaca9a8f6edddba5725ffe5adefdab6669a2eca # v3
+        with:
+          languages: javascript-typescript
+          # 既定より広いクエリ群。品質寄りの指摘も含めて拾う。
+          queries: security-and-quality
+
+      - name: 解析
+        uses: github/codeql-action/analyze@faaca9a8f6edddba5725ffe5adefdab6669a2eca # v3
+        with:
+          category: /language:javascript-typescript

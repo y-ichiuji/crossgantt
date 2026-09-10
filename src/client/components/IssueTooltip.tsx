@@ -1,6 +1,8 @@
 import { formatShort } from '../../shared/date'
 import type { GanttIssue } from '../../shared/types'
 
+import styles from './IssueTooltip.module.css'
+
 export type TooltipState = {
   issue: GanttIssue
   x: number
@@ -29,12 +31,12 @@ export function IssueTooltip({ state }: { state: TooltipState }) {
           : '日付未設定'
 
   return (
-    <div className="tooltip" style={{ left, top, width: WIDTH }} role="tooltip">
-      <div className="tooltip__key">{issue.issueKey}</div>
-      <div className="tooltip__summary">{issue.summary}</div>
-      <dl className="tooltip__meta">
+    <div className={styles.tooltip} style={{ left, top, width: WIDTH }} role="tooltip">
+      <div className={styles.key}>{issue.issueKey}</div>
+      <div className={styles.summary}>{issue.summary}</div>
+      <dl className={styles.meta}>
         <dt>期間</dt>
-        <dd className={overdue ? 'is-overdue' : undefined}>
+        <dd className={styles.period} data-overdue={overdue}>
           {period}
           {overdue ? '（遅延）' : ''}
         </dd>

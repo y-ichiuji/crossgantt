@@ -9,8 +9,8 @@
     "setup:skills": "node scripts/setup-skills.mjs",
     "dev": "vite",
     "build": "vite build",
-    "preview": "$npm_execpath run build && vite preview",
-    "deploy": "$npm_execpath run build && wrangler deploy",
+    "preview": "pnpm run build && vite preview",
+    "deploy": "pnpm run build && wrangler deploy",
     "cf-typegen": "wrangler types --env-interface CloudflareBindings",
     "lint": "oxlint --type-aware",
     "lint:fix": "oxlint --type-aware --fix",
@@ -19,7 +19,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "verify": "$npm_execpath run format:check && $npm_execpath run lint && $npm_execpath run typecheck && $npm_execpath run test"
+    "verify": "pnpm run format:check && pnpm run lint && pnpm run lint:actions && pnpm run spellcheck && pnpm run typecheck && pnpm run test",
+    "lint:actions": "node scripts/actionlint.mjs",
+    "spellcheck": "cspell --no-progress --show-suggestions \"**\""
   },
   "dependencies": {
     "hono": "4.13.5",
@@ -34,6 +36,8 @@
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
     "@vitejs/plugin-react": "6.0.5",
+    "actionlint": "2.0.6",
+    "cspell": "10.3.0",
     "happy-dom": "20.13.2",
     "oxfmt": "0.66.0",
     "oxlint": "1.81.0",
@@ -46,5 +50,6 @@
   },
   "engines": {
     "node": ">=22"
-  }
+  },
+  "packageManager": "pnpm@12.3.0+sha512.d7bd39a488131de200aeec1dbc9ca58b890437f09b1f925b1bf820fdc463df01a329e3699c3d8a7bb186d5cf3f75cb68ce820c69d6b2c983525bc0821de4c529"
 }

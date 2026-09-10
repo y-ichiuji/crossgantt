@@ -1,6 +1,6 @@
 import { Hono } from 'hono'
 import { renderToReadableStream } from 'react-dom/server'
-import { Link, ReactRefresh, Script, ViteClient } from 'vite-ssr-components/react'
+import { ReactRefresh, Script, ViteClient } from 'vite-ssr-components/react'
 
 import type { AppBindings } from './server/auth/config'
 import { auth } from './server/auth/routes'
@@ -28,8 +28,8 @@ app.get('*', async (c) => {
           />
           <ViteClient />
           <ReactRefresh />
+          {/* Script はビルド後の manifest を見て、対応する CSS の link も出力する。 */}
           <Script src="/src/client/index.tsx" />
-          <Link href="/src/style.css" rel="stylesheet" />
         </head>
         <body>
           <div id="root" />

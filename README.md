@@ -51,8 +51,8 @@ Backlog は 1 アプリにつき 1 つのリダイレクト URI しか登録で�
 取得したクライアント ID とシークレットを設定します。
 
 ```sh
-npx wrangler secret put BACKLOG_CLIENT_ID
-npx wrangler secret put BACKLOG_CLIENT_SECRET
+pnpm exec wrangler secret put BACKLOG_CLIENT_ID
+pnpm exec wrangler secret put BACKLOG_CLIENT_SECRET
 ```
 
 ローカル開発では `.dev.vars.example` を `.dev.vars` にコピーして値を入れてください（`.dev.vars` は `.gitignore` 済みです）。
@@ -60,33 +60,40 @@ npx wrangler secret put BACKLOG_CLIENT_SECRET
 セッション保存用の KV 名前空間も必要です。
 
 ```sh
-npx wrangler kv namespace create SESSIONS
+pnpm exec wrangler kv namespace create SESSIONS
 # 出力された id を wrangler.jsonc の kv_namespaces に設定する
 ```
 
 ## 開発
 
-Node.js 22 以上が必要です（Wrangler の要件）。
+Node.js 22 以上が必要です（Wrangler の要件）。パッケージマネージャーは pnpm で、
+`package.json` の `packageManager` に完全性ハッシュ付きで固定してあります。
+corepack を有効にすれば、そのバージョンが検証のうえ自動で使われます。
 
 ```sh
-npm install
-npm run dev        # http://localhost:5173
+corepack enable
+pnpm install
+pnpm dev           # http://localhost:5173
 ```
 
-| コマンド             | 内容                                   |
-| -------------------- | -------------------------------------- |
-| `npm run dev`        | 開発サーバー                           |
-| `npm run build`      | 本番ビルド                             |
-| `npm run preview`    | ビルドしてローカルで確認               |
-| `npm run deploy`     | Cloudflare Workers へデプロイ          |
-| `npm run lint`       | Biome によるフォーマット検査と lint    |
-| `npm run lint:fix`   | Biome の自動修正                       |
-| `npm run typecheck`  | `tsc --noEmit`                         |
-| `npm test`           | Vitest                                 |
-| `npm run verify`     | lint → typecheck → test をまとめて実行 |
-| `npm run cf-typegen` | `wrangler.jsonc` 変更後の型再生成      |
+| コマンド            | 内容                                    |
+| ------------------- | --------------------------------------- |
+| `pnpm dev`          | 開発サーバー                            |
+| `pnpm build`        | 本番ビルド                              |
+| `pnpm preview`      | ビルドしてローカルで確認                |
+| `pnpm deploy`       | Cloudflare Workers へデプロイ           |
+| `pnpm lint`         | oxlint（type-aware ルール込み）         |
+| `pnpm lint:fix`     | oxlint の自動修正                       |
+| `pnpm lint:actions` | actionlint による GitHub Actions の検査 |
+| `pnpm spellcheck`   | cspell によるスペルチェック             |
+| `pnpm format`       | oxfmt による整形                        |
+| `pnpm format:check` | 整形されているかの確認                  |
+| `pnpm typecheck`    | `tsc --noEmit`                          |
+| `pnpm test`         | Vitest                                  |
+| `pnpm verify`       | 上記の検証をまとめて実行                |
+| `pnpm cf-typegen`   | `wrangler.jsonc` 変更後の型再生成       |
 
-サーバーを起動した状態で `node scripts/smoke.mjs` を実行すると、HTML の配信とプロキシ API のガードを一通り確認できます。
+サーバーを起動した状態で `node scripts/smoke.mjs` を実行すると、HTML の配信と認証まわりのガードを一通り確認できます。
 
 ## 構成
 
@@ -116,8 +123,25 @@ src/
     filter.ts            表示条件と URL クエリの相互変換
     types.ts             共有の型定義
   client/                React のクライアント
+    App.module.css       画面全体のスタイル
+    styles/
+      global.css         デザイントークンとリセット（唯一のグローバル CSS）
+      controls.module.css  ボタンなど共通部品（composes で取り込む）
+    components/
+      *.tsx              コンポーネント
+      *.module.css       そのコンポーネント専用のスタイル
 docs/design.md           設計ドキュメント
 ```
+
+### スタイルの書き方
+
+スタイルは **CSS Modules** でコンポーネントごとに分けています。
+
+- グローバルなのは `src/client/styles/global.css` だけ（デザイントークンとリセット）
+- 各コンポーネントは隣の `*.module.css` を `import styles from` して使う
+- 共通部品は `styles/controls.module.css` に置き、`composes` で取り込む
+- 状態（遅延・完了・バーの種類など）はクラス名ではなく `data-*` 属性で表し、
+  CSS は `[data-overdue='true']` のように参照する。テストが見た目の実装から独立する
 
 ### なぜ Worker を経由するのか
 
@@ -133,38 +157,51 @@ docs/design.md           設計ドキュメント
 
 GitHub Actions で次を回しています。
 
-| ワークフロー | 契機                                      | 内容                                                                     |
-| ------------ | ----------------------------------------- | ------------------------------------------------------------------------ |
-| `ci.yml`     | `main` / `develop` への push、すべての PR | 整形の確認 → lint → 型チェック → テスト、ビルドとスモークテスト          |
-| `deploy.yml` | `main` への push                          | 検証を通してから Cloudflare Workers へデプロイし、公開後にスモークテスト |
+| ワークフロー | 契機                                | 内容                                                                                                    |
+| ------------ | ----------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `ci.yml`     | `main` への push、すべての PR       | 整形の確認 → lint → actionlint → スペルチェック → 型チェック → テスト、別ジョブでビルドとスモークテスト |
+| `deploy.yml` | `main` への push                    | 検証を通してから Cloudflare Workers へデプロイし、公開後にスモークテスト                                |
+| `codeql.yml` | `main` への push、すべての PR、毎週 | CodeQL によるコードの脆弱性スキャン                                                                     |
+
+すべての action はタグではなくコミットハッシュで固定しています（Renovate がハッシュごと更新します）。
 
 デプロイには次のリポジトリシークレットが必要です。
 
 | シークレット            | 取得元                                                                                        |
 | ----------------------- | --------------------------------------------------------------------------------------------- |
 | `CLOUDFLARE_API_TOKEN`  | Cloudflare ダッシュボード → My Profile → API Tokens → 「Edit Cloudflare Workers」テンプレート |
-| `CLOUDFLARE_ACCOUNT_ID` | `npx wrangler whoami` で確認できる Account ID                                                 |
+| `CLOUDFLARE_ACCOUNT_ID` | `pnpm exec wrangler whoami` で確認できる Account ID                                           |
 
 ### ブランチ運用
 
-Git-flow に沿っています。
+GitHub Flow に沿っています。
 
-- `main` — 本番。ここへの push がデプロイの契機になる
-- `develop` — 開発の統合先
-- `feature/*` — 機能開発。`develop` へ `--no-ff` でマージ
-- `release/*` — リリース準備。`main` と `develop` へマージし、`main` にタグを打つ
-- `hotfix/*` — 本番の緊急修正。`main` と `develop` の両方へ戻す
+- `main` が唯一の長命ブランチで、常にデプロイ可能な状態を保つ
+- 変更は短命なトピックブランチを切って行い、Pull Request で `main` へマージする
+- PR では CI（整形・lint・スペルチェック・型チェック・テスト・ビルド）が必ず回る
+- `main` にマージされると自動でデプロイされる
 
 ### 依存関係の更新
 
-[Renovate](https://docs.renovatebot.com/) が `develop` に対して PR を作ります（設定は `renovate.json`）。
+[Renovate](https://docs.renovatebot.com/) が `main` に対して PR を作ります（設定は `renovate.json`）。
 
 - 毎週月曜の未明にまとめて更新
-- 脆弱性が見つかった場合は待機期間なしで即座に PR を作成（`security` ラベル付き）
+- **脆弱性が見つかった場合は待機期間なしで即座に PR を作成**（`security` ラベル付き）。
+  GitHub のアラートに加えて OSV データベースも参照する
 - devDependencies のパッチ・マイナーと GitHub Actions は CI が通れば自動マージ
 - 本番依存とメジャー更新は必ず人が確認する
+- GitHub Actions はコミットハッシュで固定したまま更新する
 
-有効にするには、リポジトリに [Renovate の GitHub App](https://github.com/apps/renovate) をインストールしてください。
+### 脆弱性の検出範囲
+
+| 対象                               | 仕組み                                                        |
+| ---------------------------------- | ------------------------------------------------------------- |
+| 依存パッケージの既知の脆弱性       | Renovate（GitHub アラート + OSV）                             |
+| 自分たちが書いたコードの脆弱性     | CodeQL（`codeql.yml`、結果は Security タブへ）                |
+| コミットに混入した秘密情報         | GitHub の Secret scanning と push protection                  |
+| GitHub Actions の記述ミス          | actionlint（CI と `pnpm lint:actions`）                       |
+| 公開直後の版を掴むリスク           | pnpm の `minimumReleaseAge`（24 時間、`pnpm-workspace.yaml`） |
+| パッケージマネージャー自体の改ざん | `packageManager` の sha512 ハッシュを corepack が検証         |
 
 ## 設計の詳細
 
@@ -180,4 +217,4 @@ Hono + React 19 + Vite + Cloudflare Workers（セッション保存に Workers K
 lint は oxlint（type-aware ルールを有効化）、整形は oxfmt、テストは Vitest です。依存パッケージのバージョンはすべて完全固定し、Renovate で定期的に更新します。
 
 > `oxlint --type-aware` は型情報を使う lint ルールを実行するもので、型エラー自体は検出しません。
-> そのため型検査は `tsc --noEmit`（`npm run typecheck`）で別途行っています。
+> そのため型検査は `tsc --noEmit`（`pnpm typecheck`）で別途行っています。

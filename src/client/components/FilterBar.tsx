@@ -2,6 +2,8 @@ import { projectColor } from '../../shared/gantt'
 import type { GroupBy, MemberSummary, ProjectSummary, StatusGroup, ViewFilter, Zoom } from '../../shared/types'
 import { MultiSelect } from './MultiSelect'
 
+import styles from './FilterBar.module.css'
+
 type Props = {
   filter: ViewFilter
   onChange: (patch: Partial<ViewFilter>) => void
@@ -26,7 +28,7 @@ const ZOOM_LABELS: Record<Zoom, string> = {
 /** 表示条件を操作するツールバー。 */
 export function FilterBar({ filter, onChange, projects, members, statuses, loading }: Props) {
   return (
-    <div className="filter-bar">
+    <div className={styles.bar}>
       <MultiSelect
         label="プロジェクト"
         emptyLabel="未選択"
@@ -63,19 +65,33 @@ export function FilterBar({ filter, onChange, projects, members, statuses, loadi
         disabled={loading}
       />
 
-      <label className="field">
-        <span className="field-label">開始</span>
-        <input type="date" value={filter.from} onChange={(event) => onChange({ from: event.target.value })} />
+      <label className={styles.field}>
+        <span className={styles.label}>開始</span>
+        <input
+          type="date"
+          className={styles.input}
+          value={filter.from}
+          onChange={(event) => onChange({ from: event.target.value })}
+        />
       </label>
 
-      <label className="field">
-        <span className="field-label">終了</span>
-        <input type="date" value={filter.to} onChange={(event) => onChange({ to: event.target.value })} />
+      <label className={styles.field}>
+        <span className={styles.label}>終了</span>
+        <input
+          type="date"
+          className={styles.input}
+          value={filter.to}
+          onChange={(event) => onChange({ to: event.target.value })}
+        />
       </label>
 
-      <label className="field">
-        <span className="field-label">グルーピング</span>
-        <select value={filter.groupBy} onChange={(event) => onChange({ groupBy: event.target.value as GroupBy })}>
+      <label className={styles.field}>
+        <span className={styles.label}>グルーピング</span>
+        <select
+          className={styles.select}
+          value={filter.groupBy}
+          onChange={(event) => onChange({ groupBy: event.target.value as GroupBy })}
+        >
           {(Object.keys(GROUP_LABELS) as GroupBy[]).map((value) => (
             <option key={value} value={value}>
               {GROUP_LABELS[value]}
@@ -84,14 +100,14 @@ export function FilterBar({ filter, onChange, projects, members, statuses, loadi
         </select>
       </label>
 
-      <fieldset className="field zoom-field">
-        <legend className="field-label">ズーム</legend>
-        <div className="zoom-group">
+      <fieldset className={styles.zoomField}>
+        <legend className={styles.zoomLabel}>ズーム</legend>
+        <div className={styles.zoomGroup}>
           {(Object.keys(ZOOM_LABELS) as Zoom[]).map((value) => (
             <button
               key={value}
               type="button"
-              className={value === filter.zoom ? 'zoom-group__button is-active' : 'zoom-group__button'}
+              className={styles.zoomButton}
               onClick={() => onChange({ zoom: value })}
               aria-pressed={value === filter.zoom}
             >
@@ -101,17 +117,18 @@ export function FilterBar({ filter, onChange, projects, members, statuses, loadi
         </div>
       </fieldset>
 
-      <label className="field field--grow">
-        <span className="field-label">キーワード</span>
+      <label className={styles.fieldGrow}>
+        <span className={styles.label}>キーワード</span>
         <input
           type="search"
+          className={styles.input}
           value={filter.keyword}
           onChange={(event) => onChange({ keyword: event.target.value })}
           placeholder="件名で検索"
         />
       </label>
 
-      <label className="checkbox">
+      <label className={styles.checkbox}>
         <input
           type="checkbox"
           checked={filter.includeClosed}
@@ -120,7 +137,7 @@ export function FilterBar({ filter, onChange, projects, members, statuses, loadi
         <span>完了を含む</span>
       </label>
 
-      <label className="checkbox">
+      <label className={styles.checkbox}>
         <input
           type="checkbox"
           checked={filter.includeNoDate}

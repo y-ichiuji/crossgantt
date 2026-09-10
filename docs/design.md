@@ -109,7 +109,7 @@ Backlog には標準のガントチャート機能がありますが、**1 プ�
 
 | レイヤー     | 採用技術                                  | 備考                                        |
 | ------------ | ----------------------------------------- | ------------------------------------------- |
-| ランタイム   | Cloudflare Workers                        | `npm run deploy` でそのまま公開できる       |
+| ランタイム   | Cloudflare Workers                        | `pnpm deploy` でそのまま公開できる          |
 | サーバー     | Hono                                      | API プロキシ + SSR                          |
 | クライアント | React 19 + Vite                           | スターター既定                              |
 | ガント描画   | 自前実装（CSS Grid + 絶対配置バー）       | 後述の理由によりライブラリを使わない        |
@@ -344,6 +344,23 @@ Backlog の OAuth 2.0（認可コードフロー）でログインします。
 | 横スクロールの同期  | 行ヘッダは `position: sticky` で固定し、タイムラインのみスクロールさせる                                                                                                                                                                         |
 | 初回表示            | 期間の既定値を「今月の 1 日 〜 3 か月後の末日」とし、初回の取得件数を抑える                                                                                                                                                                      |
 
+### スタイルの構成
+
+スタイルは CSS Modules でコンポーネントごとに分割している。
+
+| 置き場所                                | 役割                                                                       |
+| --------------------------------------- | -------------------------------------------------------------------------- |
+| `src/client/styles/global.css`          | デザイントークン（CSS カスタムプロパティ）とリセット。唯一のグローバル CSS |
+| `src/client/styles/controls.module.css` | ボタン・入力欄など複数箇所で使う部品。各所から `composes` で取り込む       |
+| `src/client/**/<Component>.module.css`  | そのコンポーネント専用のスタイル                                           |
+
+状態（遅延・完了・バーの種類・切り詰めの有無）はクラス名ではなく `data-*` 属性で表し、
+CSS からは `[data-overdue='true']` のように参照する。こうすることで、テストは `data-*`
+だけを見ればよくなり、見た目の実装（クラス名の付け替え）から独立する。
+
+SSR シェルは `<Script>` がビルド後の manifest を読み、対応する CSS の `<link>` も出力する。
+そのため HTML 側で CSS ファイルを直接指定する必要はない。
+
 ## 12. 非機能要件
 
 - 対応ブラウザ: 最新の Chrome / Edge / Safari / Firefox
@@ -394,11 +411,13 @@ Backlog の OAuth 2.0（認可コードフロー）でログインします。
 
 | コマンド                 | 内容                                       |
 | ------------------------ | ------------------------------------------ |
-| `npm run format:check`   | oxfmt による整形の確認                     |
-| `npm run lint`           | oxlint（type-aware ルール込み）            |
-| `npm run typecheck`      | `tsc --noEmit` による型チェック            |
-| `npm test`               | Vitest によるユニットテストと描画テスト    |
-| `npm run verify`         | 上記 4 つをまとめて実行                    |
+| `pnpm format:check`      | oxfmt による整形の確認                     |
+| `pnpm lint`              | oxlint（type-aware ルール込み）            |
+| `pnpm lint:actions`      | actionlint による GitHub Actions の検査    |
+| `pnpm spellcheck`        | cspell によるスペルチェック                |
+| `pnpm typecheck`         | `tsc --noEmit` による型チェック            |
+| `pnpm test`              | Vitest によるユニットテストと描画テスト    |
+| `pnpm verify`            | 上記をまとめて実行                         |
 | `node scripts/smoke.mjs` | 起動中のサーバーに対する簡易スモークテスト |
 
 テストは実装ファイルと同じディレクトリに `*.test.ts(x)` として置いています。対象は日付演算・ガント描画ロジック・URL 変換・スペース検証・OAuth（認可 URL / トークン交換 / 更新）・セッションと Cookie・Backlog クライアント（リトライとトークンの masking）・課題取得のクエリ組み立て・プロキシ API のガードとトークン自動更新・各 React コンポーネントの操作・アプリ全体の統合テストです。合計 310 件で、Backlog の実データを叩くテストは含めていません。

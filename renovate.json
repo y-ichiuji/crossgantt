@@ -1,14 +1,19 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended", ":semanticCommitTypeAll(chore)"],
+  "extends": [
+    "config:recommended",
+    ":semanticCommitTypeAll(chore)",
+    "helpers:pinGitHubActionDigests",
+    "security:openssf-scorecard"
+  ],
   "timezone": "Asia/Tokyo",
-  "baseBranchPatterns": ["develop"],
   "labels": ["dependencies"],
   "prConcurrentLimit": 5,
   "prHourlyLimit": 2,
   "schedule": ["* 0-6 * * 1"],
   "rangeStrategy": "pin",
   "commitMessageAction": "更新",
+  "postUpdateOptions": ["pnpmDedupe"],
   "lockFileMaintenance": {
     "enabled": true,
     "schedule": ["* 0-6 * * 1"]
@@ -18,9 +23,12 @@
     "labels": ["security"],
     "schedule": ["at any time"],
     "prPriority": 10,
-    "minimumReleaseAge": null
+    "prCreation": "immediate",
+    "minimumReleaseAge": null,
+    "automerge": false
   },
   "osvVulnerabilityAlerts": true,
+  "dependencyDashboardOSVVulnerabilitySummary": "unresolved",
   "minimumReleaseAge": "3 days",
   "packageRules": [
     {
@@ -62,12 +70,18 @@
       "matchPackageNames": ["vitest", "@vitest/**", "happy-dom", "@testing-library/**"]
     },
     {
-      "description": "GitHub Actions は毎週まとめて上げる",
+      "description": "GitHub Actions はコミットハッシュで固定したまま毎週まとめて上げる",
       "matchManagers": ["github-actions"],
       "groupName": "github-actions",
+      "pinDigests": true,
       "automerge": true,
       "automergeType": "pr",
       "platformAutomerge": true
+    },
+    {
+      "description": "pnpm 本体は packageManager フィールドの完全性ハッシュごと更新する",
+      "matchDepTypes": ["packageManager"],
+      "automerge": false
     }
   ]
 }

@@ -53,8 +53,7 @@ describe('バーの描画', () => {
 
   it('バーから Backlog の課題へリンクする', () => {
     setup([makeIssue()])
-    const links = screen.getAllByRole('link', { name: /PJA-1/ })
-    const bar = links.find((link) => link.className.includes('gantt__bar'))
+    const bar = document.querySelector('[data-testid="gantt-bar"]')
     expect(bar?.getAttribute('href')).toBe('https://example.backlog.jp/view/PJA-1')
     expect(bar?.getAttribute('target')).toBe('_blank')
     expect(bar?.getAttribute('rel')).toContain('noreferrer')
@@ -65,32 +64,36 @@ describe('バーの描画', () => {
     expect(screen.getByLabelText('PJA-1 ログイン画面の改修（9/1〜9/15、未対応）')).toBeDefined()
   })
 
-  it('遅延している課題には警告のクラスを付ける', () => {
+  it('遅延している課題には遅延の印を付ける', () => {
     setup([makeIssue({ dueDate: '2026-09-05' })])
-    const bar = document.querySelector('.gantt__bar')
-    expect(bar?.className).toContain('gantt__bar--overdue')
+    expect(document.querySelector('[data-testid="gantt-bar"]')?.getAttribute('data-overdue')).toBe('true')
   })
 
-  it('完了済みの課題は淡く表示する', () => {
+  it('完了済みの課題には完了の印を付ける', () => {
     setup([makeIssue({ isClosed: true })])
-    expect(document.querySelector('.gantt__bar')?.className).toContain('gantt__bar--closed')
+    expect(document.querySelector('[data-testid="gantt-bar"]')?.getAttribute('data-closed')).toBe('true')
   })
 
   it('期限日だけの課題はマーカーとして描く', () => {
     setup([makeIssue({ startDate: null })])
-    expect(document.querySelector('.gantt__bar')?.className).toContain('gantt__bar--due-marker')
+    expect(document.querySelector('[data-testid="gantt-bar"]')?.getAttribute('data-kind')).toBe('due-marker')
   })
 
   it('開始日だけの課題は終端不明のバーとして描く', () => {
     setup([makeIssue({ dueDate: null })])
-    expect(document.querySelector('.gantt__bar')?.className).toContain('gantt__bar--open-ended')
+    expect(document.querySelector('[data-testid="gantt-bar"]')?.getAttribute('data-kind')).toBe('open-ended')
+  })
+
+  it('両方の日付がある課題は通常のバーとして描く', () => {
+    setup([makeIssue()])
+    expect(document.querySelector('[data-testid="gantt-bar"]')?.getAttribute('data-kind')).toBe('range')
   })
 
   it('表示期間からはみ出す課題は端を切り詰める', () => {
     setup([makeIssue({ startDate: '2020-01-01', dueDate: '2030-12-31' })])
-    const bar = document.querySelector('.gantt__bar')
-    expect(bar?.className).toContain('gantt__bar--clip-start')
-    expect(bar?.className).toContain('gantt__bar--clip-end')
+    const bar = document.querySelector('[data-testid="gantt-bar"]')
+    expect(bar?.getAttribute('data-clip-start')).toBe('true')
+    expect(bar?.getAttribute('data-clip-end')).toBe('true')
   })
 })
 
@@ -123,10 +126,10 @@ describe('グルーピング', () => {
 
   it('グループを折りたたむと課題行が消える', async () => {
     const { user } = setup([makeIssue()])
-    expect(document.querySelectorAll('.gantt__bar')).toHaveLength(1)
+    expect(document.querySelectorAll('[data-testid="gantt-bar"]')).toHaveLength(1)
 
     await user.click(screen.getByRole('button', { name: /山田太郎/ }))
-    expect(document.querySelectorAll('.gantt__bar')).toHaveLength(0)
+    expect(document.querySelectorAll('[data-testid="gantt-bar"]')).toHaveLength(0)
   })
 
   it('もう一度押すと開く', async () => {
@@ -134,7 +137,7 @@ describe('グルーピング', () => {
     const toggle = screen.getByRole('button', { name: /山田太郎/ })
     await user.click(toggle)
     await user.click(toggle)
-    expect(document.querySelectorAll('.gantt__bar')).toHaveLength(1)
+    expect(document.querySelectorAll('[data-testid="gantt-bar"]')).toHaveLength(1)
   })
 })
 
@@ -146,7 +149,7 @@ describe('目盛りと今日線', () => {
 
   it('表示期間に今日が含まれていれば今日線を引く', () => {
     setup([makeIssue()])
-    expect(document.querySelector('.gantt__today')).not.toBeNull()
+    expect(document.querySelector('[data-testid="today-line"]')).not.toBeNull()
   })
 
   it('表示期間に今日が含まれなければ今日線を引かない', () => {
@@ -154,17 +157,17 @@ describe('目盛りと今日線', () => {
       from: '2027-01-01',
       to: '2027-01-31'
     })
-    expect(document.querySelector('.gantt__today')).toBeNull()
+    expect(document.querySelector('[data-testid="today-line"]')).toBeNull()
   })
 
   it('日ズームでは土日に帯を出す', () => {
     setup([makeIssue()], { zoom: 'day' })
-    expect(document.querySelectorAll('.gantt__weekend').length).toBeGreaterThan(0)
+    expect(document.querySelectorAll('[data-testid="weekend-band"]').length).toBeGreaterThan(0)
   })
 
   it('週ズームでは土日の帯を出さない', () => {
     setup([makeIssue()], { zoom: 'week' })
-    expect(document.querySelectorAll('.gantt__weekend')).toHaveLength(0)
+    expect(document.querySelectorAll('[data-testid="weekend-band"]')).toHaveLength(0)
   })
 })
 

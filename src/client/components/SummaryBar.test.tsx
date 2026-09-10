@@ -21,16 +21,14 @@ describe('SummaryBar', () => {
     expect(screen.getByText(/取得 128 件/)).toBeDefined()
   })
 
-  it('遅延があれば強調用のクラスを付ける', () => {
+  it('遅延があれば強調の印を付ける', () => {
     setup()
-    const overdue = screen.getByText('7').closest('span')
-    expect(overdue?.className).toContain('is-overdue')
+    expect(screen.getByText('7').closest('span')?.getAttribute('data-overdue')).toBe('true')
   })
 
   it('遅延が 0 なら強調しない', () => {
     setup({ summary: { ...SUMMARY, overdue: 0 } })
-    const overdue = screen.getByText('0').closest('span')
-    expect(overdue?.className).not.toContain('is-overdue')
+    expect(screen.getByText('0').closest('span')?.getAttribute('data-overdue')).toBe('false')
   })
 
   it('打ち切られた場合は警告を出す', () => {

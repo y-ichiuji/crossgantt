@@ -104,7 +104,7 @@ describe('ログイン済みの表示', () => {
   it('取得した課題をガントに描く', async () => {
     render(<App />)
     await waitFor(() => {
-      expect(document.querySelectorAll('.gantt__bar').length).toBeGreaterThan(0)
+      expect(document.querySelectorAll('[data-testid="gantt-bar"]').length).toBeGreaterThan(0)
     })
     expect(screen.getAllByText('PJA-1').length).toBeGreaterThan(0)
   })
@@ -132,7 +132,7 @@ describe('ログイン済みの表示', () => {
 
     await user.click(screen.getByRole('button', { name: '日' }))
     await waitFor(() => {
-      expect(document.querySelector('.gantt__weekend')).not.toBeNull()
+      expect(document.querySelector('[data-testid="weekend-band"]')).not.toBeNull()
     })
     expect(requestedUrls.filter((url) => url.startsWith('/api/issues'))).toHaveLength(1)
   })
