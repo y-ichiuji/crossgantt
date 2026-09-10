@@ -115,7 +115,7 @@ export function normalizeIssue(space: string, projectKeys: Record<number, string
     assigneeName: issue.assignee?.name ?? null,
     statusId: issue.status.id,
     statusName: issue.status.name,
-    statusColor: issue.status.color ?? null,
+    statusColor: issue.status.color,
     isClosed: isClosedStatus(issue.status),
     startDate: parseBacklogDate(issue.startDate),
     dueDate: parseBacklogDate(issue.dueDate),

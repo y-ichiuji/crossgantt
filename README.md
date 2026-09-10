@@ -43,18 +43,18 @@ npm install
 npm run dev        # http://localhost:5173
 ```
 
-| コマンド | 内容 |
-| --- | --- |
-| `npm run dev` | 開発サーバー |
-| `npm run build` | 本番ビルド |
-| `npm run preview` | ビルドしてローカルで確認 |
-| `npm run deploy` | Cloudflare Workers へデプロイ |
-| `npm run lint` | Biome によるフォーマット検査と lint |
-| `npm run lint:fix` | Biome の自動修正 |
-| `npm run typecheck` | `tsc --noEmit` |
-| `npm test` | Vitest |
-| `npm run verify` | lint → typecheck → test をまとめて実行 |
-| `npm run cf-typegen` | `wrangler.jsonc` 変更後の型再生成 |
+| コマンド             | 内容                                   |
+| -------------------- | -------------------------------------- |
+| `npm run dev`        | 開発サーバー                           |
+| `npm run build`      | 本番ビルド                             |
+| `npm run preview`    | ビルドしてローカルで確認               |
+| `npm run deploy`     | Cloudflare Workers へデプロイ          |
+| `npm run lint`       | Biome によるフォーマット検査と lint    |
+| `npm run lint:fix`   | Biome の自動修正                       |
+| `npm run typecheck`  | `tsc --noEmit`                         |
+| `npm test`           | Vitest                                 |
+| `npm run verify`     | lint → typecheck → test をまとめて実行 |
+| `npm run cf-typegen` | `wrangler.jsonc` 変更後の型再生成      |
 
 サーバーを起動した状態で `node scripts/smoke.mjs` を実行すると、HTML の配信とプロキシ API のガードを一通り確認できます。
 

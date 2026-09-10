@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
+
 import { formatShort } from '../../shared/date'
 import {
   barGeometry,
@@ -157,7 +158,10 @@ export function GanttChart({ issues, filter, today, projectNames }: Props) {
                         .join(' ')
 
                       const label = `${issue.issueKey} ${issue.summary}`
-                      const period = `${bar.start === bar.end ? formatShort(bar.start) : `${formatShort(bar.start)}〜${formatShort(bar.end)}`}`
+                      const period =
+                        bar.start === bar.end
+                          ? formatShort(bar.start)
+                          : `${formatShort(bar.start)}〜${formatShort(bar.end)}`
 
                       return (
                         <div

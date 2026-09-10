@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+
 import {
   addDays,
   addMonths,
@@ -14,7 +15,7 @@ import {
   startOfMonth,
   startOfWeek,
   todayKey
-} from '../src/shared/date'
+} from './date'
 
 describe('isDateKey', () => {
   it('yyyy-MM-dd 形式を受け付ける', () => {

@@ -188,11 +188,11 @@ export async function mapWithConcurrency<T, R>(
   limit: number,
   fn: (item: T, index: number) => Promise<R>
 ): Promise<R[]> {
-  const results = new Array<R>(items.length)
+  const results = Array.from({ length: items.length }) as R[]
   let cursor = 0
 
   const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, async () => {
-    while (true) {
+    for (;;) {
       const index = cursor
       cursor += 1
       if (index >= items.length) {

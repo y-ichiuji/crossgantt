@@ -1,5 +1,6 @@
 import type { SyntheticEvent } from 'react'
 import { useState } from 'react'
+
 import type { Connection } from '../api'
 
 type Props = {

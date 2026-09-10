@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { issueUrl, normalizeSpace } from '../src/server/backlog/space'
+
+import { issueUrl, normalizeSpace } from './space'
 
 describe('normalizeSpace', () => {
   it('Backlog の公式ドメインを受け付ける', () => {

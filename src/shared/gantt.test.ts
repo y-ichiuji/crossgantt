@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+
 import {
   barGeometry,
   buildScale,
@@ -14,8 +15,8 @@ import {
   summarize,
   weekendBands,
   xOf
-} from '../src/shared/gantt'
-import type { GanttIssue } from '../src/shared/types'
+} from './gantt'
+import type { GanttIssue } from './types'
 
 const TODAY = '2026-09-10'
 
