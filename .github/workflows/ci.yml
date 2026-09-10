@@ -65,13 +65,22 @@ jobs:
         run: |
           printf 'BACKLOG_CLIENT_ID=%s\nBACKLOG_CLIENT_SECRET=%s\n' \
             "$BACKLOG_CLIENT_ID" "$BACKLOG_CLIENT_SECRET" > .dev.vars
-          npx vite preview --port 4173 > preview.log 2>&1 &
+          # host を明示しないと IPv6 だけに bind され、127.0.0.1 へ届かないことがある。
+          npx vite preview --port 4173 --host 127.0.0.1 > preview.log 2>&1 &
+          ready=0
           for _ in $(seq 1 60); do
             if curl -sf -o /dev/null http://127.0.0.1:4173/; then
+              ready=1
               break
             fi
             sleep 1
           done
+          if [ "$ready" -ne 1 ]; then
+            echo 'プレビューサーバーが起動しませんでした'
+            echo '--- preview.log ---'
+            cat preview.log
+            exit 1
+          fi
           node scripts/smoke.mjs http://127.0.0.1:4173 || {
             echo '--- preview.log ---'
             cat preview.log
