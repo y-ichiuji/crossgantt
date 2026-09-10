@@ -1,11 +1,12 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import App from '../src/client/app'
-import { ConnectPanel } from '../src/client/components/ConnectPanel'
-import { FilterBar } from '../src/client/components/FilterBar'
-import { GanttChart } from '../src/client/components/GanttChart'
-import { defaultFilter } from '../src/shared/filter'
-import type { GanttIssue } from '../src/shared/types'
+
+import { defaultFilter } from '../shared/filter'
+import type { GanttIssue } from '../shared/types'
+import App from './app'
+import { ConnectPanel } from './components/ConnectPanel'
+import { FilterBar } from './components/FilterBar'
+import { GanttChart } from './components/GanttChart'
 
 /**
  * 初回レンダリングが例外を投げないことを確認する。

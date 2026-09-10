@@ -1,8 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+
 import { todayKey } from '../shared/date'
-import { fetchKey, filterToParams, parseFilter } from '../shared/filter'
+import { filterToParams, parseFilter } from '../shared/filter'
 import { summarize } from '../shared/gantt'
-import type { GanttIssue, MemberSummary, ProjectSummary, StatusGroup, Viewer, ViewFilter } from '../shared/types'
+import type {
+  GanttIssue,
+  IssuesQuery,
+  MemberSummary,
+  ProjectSummary,
+  StatusGroup,
+  Viewer,
+  ViewFilter
+} from '../shared/types'
 import { ApiError, type Connection, connect, getIssues, getMembers, getProjects, getStatuses } from './api'
 import { ConnectPanel } from './components/ConnectPanel'
 import { FilterBar } from './components/FilterBar'
@@ -15,6 +24,9 @@ const AUTO_SELECT_LIMIT = 5
 
 /** キーワード入力を取得リクエストへ反映するまでの待ち時間。 */
 const KEYWORD_DEBOUNCE_MS = 400
+
+/** 「コピーしました」の表示を戻すまでの時間。 */
+const COPIED_FEEDBACK_MS = 1500
 
 function toMessage(error: unknown): string {
   if (error instanceof ApiError) {
@@ -29,6 +41,11 @@ function toMessage(error: unknown): string {
 /** AbortError は利用者に見せる必要がないため無視する。 */
 function isAbort(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError'
+}
+
+/** カンマ区切りに畳んだ ID キーを配列へ戻す。 */
+function parseIdsKey(key: string): number[] {
+  return key === '' ? [] : key.split(',').map(Number)
 }
 
 export default function App() {
@@ -79,19 +96,22 @@ export default function App() {
   // --- 接続 ---
 
   const handleConnect = useCallback((candidate: Connection) => {
-    setConnecting(true)
-    setConnectError(null)
-    connect(candidate)
-      .then((result) => {
+    const run = async () => {
+      setConnecting(true)
+      setConnectError(null)
+      try {
+        const result = await connect(candidate)
         saveConnection(candidate)
         setConnection(candidate)
         setViewer(result)
         setShowConnectPanel(false)
-      })
-      .catch((error: unknown) => {
+      } catch (error: unknown) {
         setConnectError(toMessage(error))
-      })
-      .finally(() => setConnecting(false))
+      } finally {
+        setConnecting(false)
+      }
+    }
+    void run()
   }, [])
 
   const handleDisconnect = useCallback(() => {
@@ -112,17 +132,21 @@ export default function App() {
       return
     }
     const controller = new AbortController()
-    setConnecting(true)
-    connect(connection, controller.signal)
-      .then((result) => setViewer(result))
-      .catch((error: unknown) => {
+    const run = async () => {
+      setConnecting(true)
+      try {
+        setViewer(await connect(connection, controller.signal))
+      } catch (error: unknown) {
         if (isAbort(error)) {
           return
         }
         setConnectError(toMessage(error))
         setShowConnectPanel(true)
-      })
-      .finally(() => setConnecting(false))
+      } finally {
+        setConnecting(false)
+      }
+    }
+    void run()
     return () => controller.abort()
   }, [connection, viewer])
 
@@ -133,13 +157,16 @@ export default function App() {
       return
     }
     const controller = new AbortController()
-    getProjects(connection, false, controller.signal)
-      .then(setProjects)
-      .catch((error: unknown) => {
+    const run = async () => {
+      try {
+        setProjects(await getProjects(connection, false, controller.signal))
+      } catch (error: unknown) {
         if (!isAbort(error)) {
           setLoadError(toMessage(error))
         }
-      })
+      }
+    }
+    void run()
     return () => controller.abort()
   }, [connection, viewer])
 
@@ -152,32 +179,36 @@ export default function App() {
     patchFilter({ projectIds: projects.slice(0, AUTO_SELECT_LIMIT).map((project) => project.id) })
   }, [projects, filter.projectIds.length, patchFilter])
 
+  // 依存配列をプリミティブだけで表現するため、配列はカンマ区切りのキーに畳む。
   const projectIdsKey = filter.projectIds.join(',')
+  const assigneeIdsKey = filter.assigneeIds.join(',')
+  const statusNamesKey = filter.statusNames.join(',')
 
   useEffect(() => {
-    if (!connection || !viewer || filter.projectIds.length === 0) {
+    if (!connection || !viewer || projectIdsKey === '') {
       setMembers([])
       setStatuses([])
       return
     }
     const controller = new AbortController()
-    const ids = projectIdsKey.split(',').map(Number)
-    Promise.all([
-      getMembers(connection, ids, false, controller.signal),
-      getStatuses(connection, ids, false, controller.signal)
-    ])
-      .then(([memberList, statusList]) => {
+    const ids = parseIdsKey(projectIdsKey)
+    const run = async () => {
+      try {
+        const [memberList, statusList] = await Promise.all([
+          getMembers(connection, ids, false, controller.signal),
+          getStatuses(connection, ids, false, controller.signal)
+        ])
         setMembers(memberList)
         setStatuses(statusList)
-      })
-      .catch((error: unknown) => {
+      } catch (error: unknown) {
         if (!isAbort(error)) {
           setLoadError(toMessage(error))
         }
-      })
+      }
+    }
+    void run()
     return () => controller.abort()
-    // projectIdsKey で依存を表現しているため filter.projectIds 自体は依存に含めない。
-  }, [connection, viewer, projectIdsKey, filter.projectIds.length])
+  }, [connection, viewer, projectIdsKey])
 
   // --- キーワードのデバウンス ---
 
@@ -188,52 +219,70 @@ export default function App() {
 
   // --- 課題取得 ---
 
-  const requestFilter = useMemo<ViewFilter>(
-    () => ({ ...filter, keyword: debouncedKeyword }),
-    [filter, debouncedKeyword]
-  )
-  const requestKey = fetchKey(requestFilter)
-
   /**
-   * 取得条件は requestKey に集約している。requestFilter そのものを依存に入れると、
-   * グルーピングやズームの変更（サーバーへの再取得が不要な操作）でも再取得が走るため、
-   * 値の受け渡しには ref を使う。
+   * 取得条件だけを取り出したオブジェクト。
+   *
+   * グルーピング軸やズームを変えただけで再取得が走らないよう、
+   * 依存はプリミティブに畳んだキーだけで表現している。
    */
-  const requestFilterRef = useRef(requestFilter)
-  requestFilterRef.current = requestFilter
+  const query = useMemo<IssuesQuery>(
+    () => ({
+      projectIds: parseIdsKey(projectIdsKey),
+      assigneeIds: parseIdsKey(assigneeIdsKey),
+      statusNames: statusNamesKey === '' ? [] : statusNamesKey.split(','),
+      from: filter.from,
+      to: filter.to,
+      keyword: debouncedKeyword,
+      includeClosed: filter.includeClosed,
+      includeNoDate: filter.includeNoDate
+    }),
+    [
+      projectIdsKey,
+      assigneeIdsKey,
+      statusNamesKey,
+      filter.from,
+      filter.to,
+      debouncedKeyword,
+      filter.includeClosed,
+      filter.includeNoDate
+    ]
+  )
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: requestKey と reloadToken は取得条件の変化と再読込操作を表すトリガーとして意図的に依存へ入れている
   useEffect(() => {
-    const target = requestFilterRef.current
-    if (!connection || !viewer || target.projectIds.length === 0) {
+    if (!connection || !viewer || query.projectIds.length === 0) {
       setIssues([])
       setFetchedAt(null)
       return
     }
     const controller = new AbortController()
-    const bypass = bypassCacheRef.current
+    // reloadToken は「再読込」ボタンのたびに増える。同じ条件でも取得をやり直すための
+    // トリガーであり、キャッシュを無視するのはこのボタン経由のときだけ。
+    const bypass = reloadToken > 0 && bypassCacheRef.current
     bypassCacheRef.current = false
 
-    setLoading(true)
-    setLoadError(null)
-    getIssues(connection, target, bypass, controller.signal)
-      .then((response) => {
+    const run = async () => {
+      setLoading(true)
+      setLoadError(null)
+      try {
+        const response = await getIssues(connection, query, bypass, controller.signal)
         setIssues(response.issues)
         setTruncated(response.truncated)
         setRequestCount(response.requestCount)
         setFetchedAt(response.fetchedAt)
-      })
-      .catch((error: unknown) => {
+      } catch (error: unknown) {
         if (isAbort(error)) {
           return
         }
         setLoadError(toMessage(error))
         setIssues([])
-      })
-      .finally(() => setLoading(false))
+      } finally {
+        setLoading(false)
+      }
+    }
+    void run()
 
     return () => controller.abort()
-  }, [connection, viewer, requestKey, reloadToken])
+  }, [connection, viewer, query, reloadToken])
 
   // --- URL 同期 ---
 
@@ -241,9 +290,8 @@ export default function App() {
     if (typeof window === 'undefined') {
       return
     }
-    const params = filterToParams(filter)
-    const query = params.toString()
-    const next = `${window.location.pathname}${query ? `?${query}` : ''}`
+    const search = filterToParams(filter).toString()
+    const next = `${window.location.pathname}${search === '' ? '' : `?${search}`}`
     window.history.replaceState(null, '', next)
   }, [filter])
 
@@ -254,13 +302,16 @@ export default function App() {
 
   const [copied, setCopied] = useState(false)
   const handleCopyUrl = useCallback(() => {
-    navigator.clipboard
-      .writeText(window.location.href)
-      .then(() => {
+    const run = async () => {
+      try {
+        await navigator.clipboard.writeText(window.location.href)
         setCopied(true)
-        setTimeout(() => setCopied(false), 1500)
-      })
-      .catch(() => setLoadError('URL のコピーに失敗しました'))
+        setTimeout(() => setCopied(false), COPIED_FEEDBACK_MS)
+      } catch {
+        setLoadError('URL のコピーに失敗しました')
+      }
+    }
+    void run()
   }, [])
 
   const projectNames = useMemo(() => {

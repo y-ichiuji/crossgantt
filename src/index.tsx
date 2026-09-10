@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { renderToReadableStream } from 'react-dom/server'
 import { Link, ReactRefresh, Script, ViteClient } from 'vite-ssr-components/react'
+
 import { api } from './server/routes'
 
 const app = new Hono<{ Bindings: CloudflareBindings }>()

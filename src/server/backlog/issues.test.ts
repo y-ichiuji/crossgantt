@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { BacklogIssue } from '../src/server/backlog/api-types'
-import { BacklogClient } from '../src/server/backlog/client'
-import { buildDateQueries, fetchGanttIssues, isClosedStatus, normalizeIssue } from '../src/server/backlog/issues'
+
+import type { BacklogIssue } from './api-types'
+import { BacklogClient } from './client'
+import { buildDateQueries, fetchGanttIssues, isClosedStatus, normalizeIssue } from './issues'
 
 const SPACE = 'example.backlog.jp'
 
@@ -93,7 +94,7 @@ describe('normalizeIssue', () => {
 /** URL に応じた応答を返すモック fetch を作る。 */
 function makeFetchMock(handler: (url: URL) => unknown) {
   return vi.fn(async (input: RequestInfo | URL) => {
-    const url = new URL(String(input))
+    const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url)
     return new Response(JSON.stringify(handler(url)), {
       status: 200,
       headers: { 'Content-Type': 'application/json' }
@@ -152,7 +153,7 @@ describe('fetchGanttIssues', () => {
       }
     )
 
-    expect(result.issues.map((issue) => issue.id).sort()).toEqual([1, 2])
+    expect(result.issues.map((issue) => issue.id).toSorted((a, b) => a - b)).toEqual([1, 2])
     expect(result.truncated).toBe(false)
     // 3 クエリ × (件数 1 回 + ページ 1 回)
     expect(client.requestCount).toBe(6)
@@ -210,7 +211,7 @@ describe('fetchGanttIssues', () => {
       }
     )
 
-    const ids = result.issues.map((issue) => issue.id).sort((a, b) => a - b)
+    const ids = result.issues.map((issue) => issue.id).toSorted((a, b) => a - b)
     expect(ids).toEqual([1, 99])
   })
 

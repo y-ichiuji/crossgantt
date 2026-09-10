@@ -1,7 +1,10 @@
 {
   "name": "crossgantt",
-  "type": "module",
+  "version": "1.0.0",
   "private": true,
+  "description": "Backlog の複数プロジェクト・複数担当者の課題を 1 枚のガントチャートで横断表示するビューア",
+  "license": "MIT",
+  "type": "module",
   "scripts": {
     "setup:skills": "node scripts/setup-skills.mjs",
     "dev": "vite",
@@ -9,29 +12,39 @@
     "preview": "$npm_execpath run build && vite preview",
     "deploy": "$npm_execpath run build && wrangler deploy",
     "cf-typegen": "wrangler types --env-interface CloudflareBindings",
+    "lint": "oxlint --type-aware",
+    "lint:fix": "oxlint --type-aware --fix",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
     "typecheck": "tsc --noEmit",
-    "lint": "biome check .",
-    "lint:fix": "biome check --write .",
-    "format": "biome format --write .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "verify": "$npm_execpath run lint && $npm_execpath run typecheck && $npm_execpath run test"
+    "verify": "$npm_execpath run format:check && $npm_execpath run lint && $npm_execpath run typecheck && $npm_execpath run test"
   },
   "dependencies": {
-    "hono": "^4.12.27",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7"
+    "hono": "4.12.33",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.11",
-    "@cloudflare/vite-plugin": "^1.42.2",
-    "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.2",
-    "typescript": "^7.0.2",
-    "vite": "^8.0.16",
-    "vite-ssr-components": "^0.6.1",
-    "vitest": "^4.1.11",
-    "wrangler": "^4.104.0"
+    "@cloudflare/vite-plugin": "1.50.0",
+    "@testing-library/react": "16.3.3",
+    "@testing-library/user-event": "14.6.7",
+    "@types/node": "26.4.1",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "@vitejs/plugin-react": "6.0.5",
+    "happy-dom": "20.13.2",
+    "oxfmt": "0.66.0",
+    "oxlint": "1.81.0",
+    "oxlint-tsgolint": "7.0.2001",
+    "typescript": "7.0.2",
+    "vite": "8.2.0",
+    "vite-ssr-components": "0.6.1",
+    "vitest": "4.1.11",
+    "wrangler": "4.118.0"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

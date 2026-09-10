@@ -5,7 +5,7 @@
  */
 
 import { addMonths, endOfMonth, isDateKey, startOfMonth, todayKey } from './date'
-import type { GroupBy, ViewFilter, Zoom } from './types'
+import type { GroupBy, IssuesQuery, ViewFilter, Zoom } from './types'
 
 const GROUP_BY_VALUES: GroupBy[] = ['assignee', 'project', 'milestone']
 const ZOOM_VALUES: Zoom[] = ['day', 'week', 'month']
@@ -40,7 +40,7 @@ function parseIdList(value: string | null): number[] {
     .split(',')
     .map((part) => Number.parseInt(part.trim(), 10))
     .filter((id) => Number.isSafeInteger(id) && id > 0)
-  return [...new Set(ids)].sort((a, b) => a - b)
+  return [...new Set(ids)].toSorted((a, b) => a - b)
 }
 
 function parseNameList(value: string | null): string[] {
@@ -129,12 +129,8 @@ export function filterToParams(filter: ViewFilter, now: number = Date.now()): UR
   return params
 }
 
-/**
- * サーバーへの再取得が必要かどうかを判定するためのキー。
- *
- * グルーピング軸とズームはクライアント側だけで完結するため含めない。
- */
-export function fetchKey(filter: ViewFilter): string {
+/** サーバーへの再取得が必要かどうかを判定するためのキー。 */
+export function fetchKey(filter: IssuesQuery): string {
   return JSON.stringify({
     projects: filter.projectIds,
     assignees: filter.assigneeIds,

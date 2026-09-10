@@ -80,6 +80,17 @@ export type ViewFilter = {
   includeNoDate: boolean
 }
 
+/**
+ * 課題取得に影響する条件だけを取り出したもの。
+ *
+ * グルーピング軸とズームはクライアント側だけで完結するため含めない。
+ * これらを含めてしまうと、表示を切り替えただけで再取得が走ってしまう。
+ */
+export type IssuesQuery = Pick<
+  ViewFilter,
+  'projectIds' | 'assigneeIds' | 'statusNames' | 'from' | 'to' | 'keyword' | 'includeClosed' | 'includeNoDate'
+>
+
 /** Backlog のレート制限残量。 */
 export type RateLimitStatus = {
   limit: number

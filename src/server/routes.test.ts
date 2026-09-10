@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { api } from '../src/server/routes'
+
+import { api } from './routes'
 
 const VALID_HEADERS = {
   'X-Backlog-Space': 'example.backlog.jp',

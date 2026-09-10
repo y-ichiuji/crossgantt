@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { BacklogApiError, BacklogClient, mapWithConcurrency } from '../src/server/backlog/client'
+
+import { BacklogApiError, BacklogClient, mapWithConcurrency } from './client'
 
 const SPACE = 'example.backlog.jp'
 const API_KEY = 'super-secret-key'
@@ -125,7 +126,7 @@ describe('BacklogClient.get', () => {
     globalThis.fetch = function mockFetch(this: unknown) {
       receivedThis.push(this)
       return Promise.resolve(jsonResponse({ ok: true }))
-    } as unknown as typeof fetch
+    }
 
     try {
       const client = new BacklogClient({ space: SPACE, apiKey: API_KEY })

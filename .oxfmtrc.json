@@ -1,0 +1,22 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "printWidth": 120,
+  "tabWidth": 2,
+  "useTabs": false,
+  "singleQuote": true,
+  "jsxSingleQuote": false,
+  "semi": false,
+  "trailingComma": "none",
+  "arrowParens": "always",
+  "insertFinalNewline": true,
+  "sortImports": true,
+  "sortPackageJson": true,
+  "ignorePatterns": [
+    "dist/**",
+    ".wrangler/**",
+    "public/**",
+    "skills/**",
+    "worker-configuration.d.ts",
+    "package-lock.json"
+  ]
+}

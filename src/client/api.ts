@@ -10,9 +10,9 @@ import type {
   IssuesResponse,
   MemberSummary,
   ProjectSummary,
+  IssuesQuery,
   StatusGroup,
-  Viewer,
-  ViewFilter
+  Viewer
 } from '../shared/types'
 
 export type Connection = {
@@ -32,7 +32,7 @@ export class ApiError extends Error {
   }
 }
 
-function authHeaders(connection: Connection): HeadersInit {
+function authHeaders(connection: Connection): Record<string, string> {
   return {
     'X-Backlog-Space': connection.space,
     'X-Backlog-Api-Key': connection.apiKey
@@ -44,10 +44,13 @@ async function request<T>(
   path: string,
   init: RequestInit & { signal?: AbortSignal } = {}
 ): Promise<T> {
-  const response = await fetch(path, {
-    ...init,
-    headers: { ...authHeaders(connection), ...(init.headers ?? {}) }
-  })
+  // HeadersInit は配列形式も取りうるため、オブジェクトのスプレッドで合成してはいけない。
+  const headers = new Headers(init.headers)
+  for (const [key, value] of Object.entries(authHeaders(connection))) {
+    headers.set(key, value)
+  }
+
+  const response = await fetch(path, { ...init, headers })
 
   if (!response.ok) {
     let body: ApiErrorBody | null = null
@@ -100,7 +103,7 @@ export function getStatuses(
 
 export function getIssues(
   connection: Connection,
-  filter: ViewFilter,
+  filter: IssuesQuery,
   refresh: boolean,
   signal?: AbortSignal
 ): Promise<IssuesResponse> {

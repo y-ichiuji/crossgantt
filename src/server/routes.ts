@@ -9,6 +9,7 @@
  */
 
 import { Hono } from 'hono'
+
 import { isDateKey } from '../shared/date'
 import type { ApiErrorBody, IssuesResponse } from '../shared/types'
 import { BacklogApiError, BacklogClient } from './backlog/client'
@@ -79,7 +80,7 @@ function parseIds(value: string | undefined): number[] {
     .split(',')
     .map((part) => Number.parseInt(part.trim(), 10))
     .filter((id) => Number.isSafeInteger(id) && id > 0)
-  return [...new Set(ids)].sort((a, b) => a - b)
+  return [...new Set(ids)].toSorted((a, b) => a - b)
 }
 
 /** カンマ区切りの名前リストを解釈する。 */
