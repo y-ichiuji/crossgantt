@@ -1,17 +1,17 @@
 /**
  * 日本の祝日の取得。
  *
- * 一次情報は holidays-jp（<https://holidays-jp.github.io/>）の JSON を使う。
- * Google カレンダーの祝日情報から自動生成されており、内閣府の告示に追従する。
- * ただし取得できるのは去年・今年・来年の 3 年分だけなので、それより先の
- * 期間は `shared/holiday.ts` の規則計算で補う。ガントチャートは先の予定を
- * 並べるものなので、来年までしか塗られないのでは足りない。
+ * holidays-jp（<https://holidays-jp.github.io/>）の JSON を使う。Google カレンダーの
+ * 祝日情報から自動生成されており、告示の変更に追従する。
  *
- * 取得に失敗した場合も計算側へ倒す。祝日の背景が出ないことは
- * 画面全体を止めるほどの問題ではない。
+ * 取得できるのは去年・今年・来年の 3 年分。それより先の期間は祝日を塗らない。
+ * 数年先まで見渡すような使い方はしない前提で、規則を自前で持たない判断にしている。
+ *
+ * 取得に失敗した場合は空を返す。祝日の背景が出ないことは画面を止めるほどの
+ * 問題ではないため、画面全体のエラーにはしない。
  */
 
-import { holidaysBetween } from '../shared/holiday'
+import type { Holiday } from '../shared/types'
 import { hashKey, withJsonCache } from './cache'
 
 const API_URL = 'https://holidays-jp.github.io/api/v1/date.json'
@@ -51,7 +51,7 @@ async function fetchFromApi(fetchImpl: typeof fetch): Promise<Record<string, str
     }
     return parseResponse(await response.json())
   } catch {
-    // 外部サービスが落ちていても、この画面は計算側で成立する。
+    // 外部サービスが落ちていても、この画面は祝日なしで成立する。
     return null
   }
 }
@@ -85,29 +85,17 @@ async function loadFromApi(options: HolidaySourceOptions): Promise<Record<string
 /**
  * 期間内の祝日を古い順に返す。
  *
- * holidays-jp が持っている年はその値を、持っていない年は規則計算の値を使う。
- * 混在させるのは、3 年より先を空欄にするより一貫した表示になるため。
+ * holidays-jp が持っていない年（3 年より先など）は、その期間だけ何も返らない。
  */
-export async function fetchHolidays(
-  from: string,
-  to: string,
-  options: HolidaySourceOptions = {}
-): Promise<Array<{ dateKey: string; name: string }>> {
+export async function fetchHolidays(from: string, to: string, options: HolidaySourceOptions = {}): Promise<Holiday[]> {
   const api = await loadFromApi(options)
   if (!api) {
-    return holidaysBetween(from, to)
+    return []
   }
-
-  // API が値を持っている年。1 日でも入っていればその年は API に任せる。
-  const covered = new Set(Object.keys(api).map((dateKey) => dateKey.slice(0, 4)))
-
-  const fromApi = Object.entries(api)
+  return Object.entries(api)
     .filter(([dateKey]) => dateKey >= from && dateKey <= to)
     .map(([dateKey, name]) => ({ dateKey, name }))
-
-  const computed = holidaysBetween(from, to).filter(({ dateKey }) => !covered.has(dateKey.slice(0, 4)))
-
-  return [...fromApi, ...computed].toSorted((a, b) => (a.dateKey < b.dateKey ? -1 : 1))
+    .toSorted((a, b) => (a.dateKey < b.dateKey ? -1 : 1))
 }
 
 /** テスト用にアイソレート内キャッシュを捨てる。 */

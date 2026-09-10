@@ -35,51 +35,32 @@ describe('fetchHolidays', () => {
     expect(holidays.map((holiday) => holiday.dateKey)).toEqual(['2026-09-22'])
   })
 
-  it('API が持っていない年は計算で補う', async () => {
-    // API は 2026 年しか持っていないが、2030 年も表示したい。
-    const holidays = await fetchHolidays('2030-01-01', '2030-01-31', {
-      fetchImpl: stubApi(API_2026),
-      skipMemo: true
-    })
-    expect(holidays).toEqual([
-      { dateKey: '2030-01-01', name: '元日' },
-      { dateKey: '2030-01-14', name: '成人の日' }
-    ])
-  })
-
-  it('API が持っている年は計算結果で二重に足さない', async () => {
-    // API 側に無い 2026-01-01 も、2026 年は API の担当なので足さない。
+  it('日付順に並べて返す', async () => {
     const holidays = await fetchHolidays('2026-01-01', '2026-12-31', {
+      fetchImpl: stubApi({ '2026-09-23': '秋分の日', '2026-01-01': '元日', '2026-09-21': '敬老の日' }),
+      skipMemo: true
+    })
+    expect(holidays.map((holiday) => holiday.dateKey)).toEqual(['2026-01-01', '2026-09-21', '2026-09-23'])
+  })
+
+  it('API が持っていない年は空になる', async () => {
+    // holidays-jp は去年・今年・来年の 3 年分しか持たない。
+    const holidays = await fetchHolidays('2030-01-01', '2030-12-31', {
       fetchImpl: stubApi(API_2026),
       skipMemo: true
     })
-    expect(holidays.map((holiday) => holiday.dateKey)).toEqual(['2026-09-21', '2026-09-22', '2026-09-23'])
+    expect(holidays).toEqual([])
   })
 
-  it('API と計算を混ぜても日付順になる', async () => {
-    const holidays = await fetchHolidays('2026-09-01', '2027-01-31', {
-      fetchImpl: stubApi(API_2026),
-      skipMemo: true
-    })
-    const keys = holidays.map((holiday) => holiday.dateKey)
-    expect(keys).toEqual([...keys].toSorted((a, b) => (a < b ? -1 : 1)))
-    expect(keys).toContain('2026-09-21')
-    expect(keys).toContain('2027-01-01')
-  })
-
-  it('API が落ちていたら計算結果に倒す', async () => {
+  it('API が落ちていたら空を返す', async () => {
     const holidays = await fetchHolidays('2026-09-01', '2026-09-30', {
       fetchImpl: stubApi({}, 503),
       skipMemo: true
     })
-    expect(holidays).toEqual([
-      { dateKey: '2026-09-21', name: '敬老の日' },
-      { dateKey: '2026-09-22', name: '国民の休日' },
-      { dateKey: '2026-09-23', name: '秋分の日' }
-    ])
+    expect(holidays).toEqual([])
   })
 
-  it('通信そのものが失敗しても計算結果に倒す', async () => {
+  it('通信そのものが失敗しても空を返す', async () => {
     const failing = vi.fn(async () => {
       throw new Error('network down')
     }) as unknown as typeof fetch
@@ -87,19 +68,19 @@ describe('fetchHolidays', () => {
       fetchImpl: failing,
       skipMemo: true
     })
-    expect(holidays.map((holiday) => holiday.dateKey)).toEqual(['2026-01-01', '2026-01-12'])
+    expect(holidays).toEqual([])
   })
 
-  it('形の違う応答は無視して計算結果に倒す', async () => {
+  it('形の違う応答は無視して空を返す', async () => {
     const holidays = await fetchHolidays('2026-01-01', '2026-01-02', {
       fetchImpl: stubApi(['2026-01-01']),
       skipMemo: true
     })
-    expect(holidays).toEqual([{ dateKey: '2026-01-01', name: '元日' }])
+    expect(holidays).toEqual([])
   })
 
   it('日付として読めない項目は捨てる', async () => {
-    const holidays = await fetchHolidays('2026-09-21', '2026-09-21', {
+    const holidays = await fetchHolidays('2026-09-01', '2026-09-30', {
       fetchImpl: stubApi({ 'not-a-date': 'なにか', '2026-09-21': '敬老の日' }),
       skipMemo: true
     })

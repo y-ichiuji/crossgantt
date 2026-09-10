@@ -19,7 +19,6 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:holidays": "CHECK_HOLIDAYS=1 vitest run src/shared/holiday.official.test.ts",
     "verify": "pnpm run format:check && pnpm run lint && pnpm run lint:css && pnpm run lint:md && pnpm run lint:actions && pnpm run spellcheck && pnpm run typecheck && pnpm run test",
     "lint:actions": "node scripts/actionlint.mjs",
     "lint:css": "stylelint \"**/*.css\"",
