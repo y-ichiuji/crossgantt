@@ -1,0 +1,83 @@
+.bar {
+  composes: panel from '../styles/controls.module.css';
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  padding: 12px;
+  margin-bottom: 10px;
+}
+
+.field {
+  composes: field from '../styles/controls.module.css';
+}
+
+.fieldGrow {
+  composes: field;
+  flex: 1 1 160px;
+  min-width: 140px;
+}
+
+.label {
+  composes: fieldLabel from '../styles/controls.module.css';
+}
+
+.input {
+  composes: textInput from '../styles/controls.module.css';
+}
+
+.select {
+  composes: textInput from '../styles/controls.module.css';
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  align-self: end;
+  height: var(--control-height);
+  white-space: nowrap;
+}
+
+/* fieldset の既定の枠と余白を消して、他のフィールドと揃える。 */
+.zoomField {
+  border: none;
+  margin: 0;
+  padding: 0;
+  min-inline-size: auto;
+}
+
+.zoomLabel {
+  composes: fieldLabel from '../styles/controls.module.css';
+  padding: 0;
+}
+
+.zoomGroup {
+  display: flex;
+}
+
+.zoomButton {
+  height: var(--control-height);
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.zoomButton:first-child {
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+}
+
+.zoomButton:last-child {
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+
+.zoomButton + .zoomButton {
+  border-left: none;
+}
+
+.zoomButton[aria-pressed='true'] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}

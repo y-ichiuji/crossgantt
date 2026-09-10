@@ -1,0 +1,15 @@
+# pnpm 12 の既定のサプライチェーン保護。公開直後の版を掴まないようにする。
+# 侵害されたパッケージが公開直後に取り込まれるリスクを下げるため、明示的に維持する（24 時間）。
+minimumReleaseAge: 1440
+
+# rolldown（Vite の内部依存）はプラットフォームごとに最適化バイナリを公開しており、
+# 新しいターゲットが追加された直後は上の待機期間に引っかかる。
+# OpenHarmony 向けのバイナリはこの環境（macOS / Linux）では展開も実行もされないため除外する。
+minimumReleaseAgeExclude:
+  - '@rolldown/binding-openharmony-arm64'
+
+# pnpm はインストール時のライフサイクルスクリプトを既定でブロックする。
+# ネイティブバイナリの展開に必要なものだけを明示的に許可する。
+allowBuilds:
+  esbuild: true
+  workerd: true

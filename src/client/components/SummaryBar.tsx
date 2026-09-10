@@ -1,5 +1,7 @@
 import type { GanttSummary } from '../../shared/gantt'
 
+import styles from './SummaryBar.module.css'
+
 type Props = {
   summary: GanttSummary
   truncated: boolean
@@ -16,29 +18,29 @@ function formatTime(iso: string): string {
 /** 件数と取得状況のサマリー。 */
 export function SummaryBar({ summary, truncated, requestCount, fetchedAt, loading }: Props) {
   return (
-    <div className="summary">
-      <span className="summary__item">
+    <div className={styles.bar}>
+      <span className={styles.item}>
         期間内 <strong>{summary.inRange}</strong> 件
       </span>
-      <span className={summary.overdue > 0 ? 'summary__item is-overdue' : 'summary__item'}>
+      <span className={styles.item} data-overdue={summary.overdue > 0}>
         遅延 <strong>{summary.overdue}</strong> 件
       </span>
-      <span className="summary__item">
+      <span className={styles.item}>
         日付未設定 <strong>{summary.noDate}</strong> 件
       </span>
-      <span className="summary__item summary__item--muted">取得 {summary.total} 件</span>
+      <span className={styles.muted}>取得 {summary.total} 件</span>
 
       {truncated ? (
-        <output className="summary__warning">
+        <output className={styles.warning}>
           件数が多いため一部のみ表示しています。期間やプロジェクトを絞り込んでください。
         </output>
       ) : null}
 
-      <span className="summary__spacer" />
+      <span className={styles.spacer} />
 
-      {loading ? <span className="summary__item summary__item--muted">読み込み中…</span> : null}
+      {loading ? <span className={styles.muted}>読み込み中…</span> : null}
       {!loading && fetchedAt ? (
-        <span className="summary__item summary__item--muted">
+        <span className={styles.muted}>
           {formatTime(fetchedAt)} 時点 / Backlog API {requestCount} リクエスト
         </span>
       ) : null}

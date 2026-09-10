@@ -1,5 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 
+import styles from './MultiSelect.module.css'
+
 export type MultiSelectOption = {
   value: string
   label: string
@@ -71,11 +73,11 @@ export function MultiSelect({ label, options, selected, onChange, emptyLabel, di
   const summary = selected.length === 0 ? emptyLabel : `${selected.length}件選択`
 
   return (
-    <div className="multi-select" ref={containerRef}>
-      <span className="field-label">{label}</span>
+    <div className={styles.root} ref={containerRef}>
+      <span className={styles.label}>{label}</span>
       <button
         type="button"
-        className="multi-select__trigger"
+        className={styles.trigger}
         onClick={() => setOpen((value) => !value)}
         disabled={disabled || options.length === 0}
         aria-expanded={open}
@@ -86,43 +88,47 @@ export function MultiSelect({ label, options, selected, onChange, emptyLabel, di
       </button>
 
       {open ? (
-        <div className="multi-select__panel" id={listId}>
+        <div className={styles.panel} id={listId}>
           {searchable ? (
             <input
               type="search"
-              className="multi-select__search"
+              className={styles.search}
               placeholder="絞り込み"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
           ) : null}
 
-          <div className="multi-select__actions">
-            <button type="button" onClick={() => onChange(visibleOptions.map((option) => option.value))}>
+          <div className={styles.actions}>
+            <button
+              type="button"
+              className={styles.actionButton}
+              onClick={() => onChange(visibleOptions.map((option) => option.value))}
+            >
               表示中をすべて選択
             </button>
-            <button type="button" onClick={() => onChange([])}>
+            <button type="button" className={styles.actionButton} onClick={() => onChange([])}>
               クリア
             </button>
           </div>
 
-          <ul className="multi-select__list">
+          <ul className={styles.list}>
             {visibleOptions.map((option) => (
               <li key={option.value}>
-                <label>
+                <label className={styles.option}>
                   <input
                     type="checkbox"
                     checked={selectedSet.has(option.value)}
                     onChange={() => toggle(option.value)}
                   />
                   {option.color ? (
-                    <span className="multi-select__chip" style={{ backgroundColor: option.color }} aria-hidden="true" />
+                    <span className={styles.chip} style={{ backgroundColor: option.color }} aria-hidden="true" />
                   ) : null}
                   <span>{option.label}</span>
                 </label>
               </li>
             ))}
-            {visibleOptions.length === 0 ? <li className="multi-select__empty">該当なし</li> : null}
+            {visibleOptions.length === 0 ? <li className={styles.empty}>該当なし</li> : null}
           </ul>
         </div>
       ) : null}

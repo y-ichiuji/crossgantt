@@ -1,0 +1,25 @@
+.bar {
+  composes: panel from '../styles/controls.module.css';
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  margin-bottom: 10px;
+}
+
+.item[data-overdue='true'] {
+  color: var(--danger);
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.warning {
+  color: var(--danger);
+}
+
+.spacer {
+  flex: 1;
+}

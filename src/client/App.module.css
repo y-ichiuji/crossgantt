@@ -1,0 +1,67 @@
+.loading {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+}
+
+.app {
+  padding: 12px 16px 32px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logo {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.title {
+  margin: 0;
+  font-size: 16px;
+}
+
+.space {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.button {
+  composes: button from './styles/controls.module.css';
+}
+
+.error {
+  composes: errorBox from './styles/controls.module.css';
+}
+
+.empty {
+  composes: panel from './styles/controls.module.css';
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text-muted);
+}

@@ -1,8 +1,9 @@
 name: CI
 
+# GitHub Flow: main への push と、main へ向けたすべての PR で回す。
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -18,41 +19,55 @@ jobs:
     name: 静的解析とテスト
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - uses: actions/setup-node@v5
+      # packageManager に sha512 ハッシュを書いてあるため、corepack が
+      # pnpm 本体の完全性を検証したうえで取得する。
+      - name: corepack を有効化
+        run: corepack enable
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version-file: .node-version
-          cache: npm
+          cache: pnpm
 
-      # package-lock.json どおりに入れる。lock が古ければここで失敗する。
-      - run: npm ci
+      # pnpm-lock.yaml どおりに入れる。lock が古ければここで失敗する。
+      - run: pnpm install --frozen-lockfile
 
       - name: 整形の確認
-        run: npm run format:check
+        run: pnpm run format:check
 
       - name: lint（type-aware）
-        run: npm run lint
+        run: pnpm run lint
+
+      - name: GitHub Actions の lint
+        run: pnpm run lint:actions
+
+      - name: スペルチェック
+        run: pnpm run spellcheck
 
       # type-aware lint は型エラーを検出しないため、型検査は別に走らせる。
       - name: 型チェック
-        run: npm run typecheck
+        run: pnpm run typecheck
 
       - name: テスト
-        run: npm test
+        run: pnpm test
 
   build:
     name: ビルド
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - uses: actions/setup-node@v5
+      - name: corepack を有効化
+        run: corepack enable
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version-file: .node-version
-          cache: npm
+          cache: pnpm
 
-      - run: npm ci
+      - run: pnpm install --frozen-lockfile
 
       # ビルド時に .dev.vars が dist/ へコピーされ、preview はそちらを読む。
       # そのため、ビルドより前に用意しておく必要がある。
@@ -65,13 +80,13 @@ jobs:
             "$BACKLOG_CLIENT_ID" "$BACKLOG_CLIENT_SECRET" > .dev.vars
 
       - name: ビルド
-        run: npm run build
+        run: pnpm run build
 
       # 実際に起動して、ログイン前に確認できる範囲のスモークテストを流す。
       - name: スモークテスト
         run: |
           # host を明示しないと IPv6 だけに bind され、127.0.0.1 へ届かないことがある。
-          npx vite preview --port 4173 --host 127.0.0.1 > preview.log 2>&1 &
+          pnpm exec vite preview --port 4173 --host 127.0.0.1 > preview.log 2>&1 &
           ready=0
           for _ in $(seq 1 60); do
             if curl -sf -o /dev/null http://127.0.0.1:4173/; then

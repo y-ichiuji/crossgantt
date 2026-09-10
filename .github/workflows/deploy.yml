@@ -1,7 +1,6 @@
 name: Deploy
 
-# main への push だけを本番へ反映する。
-# Git-flow に従い、main へは release / hotfix ブランチのマージ経由で入る。
+# GitHub Flow: main が常にデプロイ可能な状態。main への push で本番へ反映する。
 on:
   push:
     branches: [main]
@@ -19,18 +18,18 @@ jobs:
     name: デプロイ前の検証
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - uses: actions/setup-node@v5
+      - name: corepack を有効化
+        run: corepack enable
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version-file: .node-version
-          cache: npm
+          cache: pnpm
 
-      - run: npm ci
-      - run: npm run format:check
-      - run: npm run lint
-      - run: npm run typecheck
-      - run: npm test
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run verify
 
   deploy:
     name: Cloudflare Workers へデプロイ
@@ -40,15 +39,18 @@ jobs:
       name: production
       url: https://crossgantt.y-ichiuji.workers.dev
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - uses: actions/setup-node@v5
+      - name: corepack を有効化
+        run: corepack enable
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version-file: .node-version
-          cache: npm
+          cache: pnpm
 
-      - run: npm ci
-      - run: npm run build
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
 
       # wrangler の汎用エラーより先に、何が足りないかを明示する。
       - name: シークレットの確認
@@ -65,10 +67,11 @@ jobs:
           fi
 
       - name: デプロイ
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          packageManager: pnpm
           # ビルド済みの成果物をそのまま上げる。
           command: deploy
 

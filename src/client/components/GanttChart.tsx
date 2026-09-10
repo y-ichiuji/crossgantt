@@ -18,6 +18,8 @@ import {
 import type { GanttIssue, ViewFilter } from '../../shared/types'
 import { IssueTooltip, type TooltipState } from './IssueTooltip'
 
+import styles from './GanttChart.module.css'
+
 type Props = {
   issues: GanttIssue[]
   filter: ViewFilter
@@ -68,9 +70,9 @@ export function GanttChart({ issues, filter, today, projectNames }: Props) {
 
   if (dated.length === 0 && undated.length === 0) {
     return (
-      <div className="gantt-empty">
+      <div className={styles.empty}>
         <p>表示できる課題がありません。</p>
-        <p className="gantt-empty__hint">
+        <p className={styles.emptyHint}>
           プロジェクトの選択、表示期間、ステータスの条件を見直してください。日付が設定されていない課題は
           「日付未設定を含む」を有効にすると一覧に表示されます。
         </p>
@@ -80,37 +82,46 @@ export function GanttChart({ issues, filter, today, projectNames }: Props) {
 
   return (
     <>
-      <div className="gantt" ref={scrollRef} style={{ '--timeline-width': `${scale.width}px` } as React.CSSProperties}>
-        <div className="gantt__inner">
-          <div className="gantt__bg" aria-hidden="true">
+      <div
+        className={styles.scroller}
+        ref={scrollRef}
+        style={{ '--timeline-width': `${scale.width}px` } as React.CSSProperties}
+      >
+        <div className={styles.inner}>
+          <div className={styles.background} aria-hidden="true">
             {weekends.map((band) => (
-              <div key={band.key} className="gantt__weekend" style={{ left: band.left, width: band.width }} />
+              <div
+                key={band.key}
+                className={styles.weekend}
+                data-testid="weekend-band"
+                style={{ left: band.left, width: band.width }}
+              />
             ))}
             {majors.map((tick) => (
-              <div key={tick.key} className="gantt__month-line" style={{ left: tick.left }} />
+              <div key={tick.key} className={styles.monthLine} style={{ left: tick.left }} />
             ))}
           </div>
 
           {/* 今日線はバーより手前に描くため、背景とは別のレイヤーに置く。 */}
           {todayLeft !== null ? (
-            <div className="gantt__fg" aria-hidden="true">
-              <div className="gantt__today" style={{ left: todayLeft }} />
+            <div className={styles.foreground} aria-hidden="true">
+              <div className={styles.today} data-testid="today-line" style={{ left: todayLeft }} />
             </div>
           ) : null}
 
-          <div className="gantt__header">
-            <div className="gantt__head-cell">課題</div>
-            <div className="gantt__head-track">
-              <div className="gantt__ticks gantt__ticks--major">
+          <div className={styles.header}>
+            <div className={styles.headCell}>課題</div>
+            <div className={styles.headTrack}>
+              <div className={styles.ticksMajor}>
                 {majors.map((tick) => (
-                  <div key={tick.key} className="gantt__tick" style={{ left: tick.left, width: tick.width }}>
+                  <div key={tick.key} className={styles.tick} style={{ left: tick.left, width: tick.width }}>
                     {tick.label}
                   </div>
                 ))}
               </div>
-              <div className="gantt__ticks gantt__ticks--minor">
+              <div className={styles.ticksMinor}>
                 {minors.map((tick) => (
-                  <div key={tick.key} className="gantt__tick" style={{ left: tick.left, width: tick.width }}>
+                  <div key={tick.key} className={styles.tick} style={{ left: tick.left, width: tick.width }}>
                     {tick.label}
                   </div>
                 ))}
@@ -121,19 +132,19 @@ export function GanttChart({ issues, filter, today, projectNames }: Props) {
           {groups.map((group) => {
             const isCollapsed = collapsed.has(group.key)
             return (
-              <div className="gantt__group" key={group.key}>
-                <div className="gantt__row gantt__row--group">
-                  <div className="gantt__row-head">
-                    <button type="button" className="gantt__group-toggle" onClick={() => toggleGroup(group.key)}>
+              <div key={group.key}>
+                <div className={styles.groupRow}>
+                  <div className={styles.rowHead}>
+                    <button type="button" className={styles.groupToggle} onClick={() => toggleGroup(group.key)}>
                       <span aria-hidden="true">{isCollapsed ? '▶' : '▼'}</span>
-                      <span className="gantt__group-name">{group.label}</span>
-                      <span className="gantt__group-count">{group.issues.length}件</span>
+                      <span className={styles.groupName}>{group.label}</span>
+                      <span className={styles.groupCount}>{group.issues.length}件</span>
                       {group.overdueCount > 0 ? (
-                        <span className="badge badge--overdue">{group.overdueCount}件遅延</span>
+                        <span className={styles.overdueBadge}>{group.overdueCount}件遅延</span>
                       ) : null}
                     </button>
                   </div>
-                  <div className="gantt__row-track" />
+                  <div className={styles.rowTrack} />
                 </div>
 
                 {isCollapsed
@@ -146,16 +157,6 @@ export function GanttChart({ issues, filter, today, projectNames }: Props) {
                       const geometry = barGeometry(bar, scale)
                       const overdue = isOverdue(issue, today)
                       const color = projectColor(issue.projectId)
-                      const classNames = [
-                        'gantt__bar',
-                        `gantt__bar--${bar.kind}`,
-                        overdue ? 'gantt__bar--overdue' : '',
-                        issue.isClosed ? 'gantt__bar--closed' : '',
-                        geometry.clippedStart ? 'gantt__bar--clip-start' : '',
-                        geometry.clippedEnd ? 'gantt__bar--clip-end' : ''
-                      ]
-                        .filter(Boolean)
-                        .join(' ')
 
                       const label = `${issue.issueKey} ${issue.summary}`
                       const period =
@@ -165,30 +166,36 @@ export function GanttChart({ issues, filter, today, projectNames }: Props) {
 
                       return (
                         <div
-                          className="gantt__row"
+                          className={styles.row}
                           key={issue.id}
                           style={{ contentVisibility: 'auto', containIntrinsicSize: `${ROW_HEIGHT}px` }}
                         >
-                          <div className="gantt__row-head">
+                          <div className={styles.rowHead}>
                             <span
-                              className="gantt__project-chip"
+                              className={styles.projectChip}
                               style={{ backgroundColor: color }}
                               aria-hidden="true"
                             />
                             <a
-                              className="gantt__issue-link"
+                              className={styles.issueLink}
                               href={issue.url}
                               target="_blank"
                               rel="noreferrer"
                               title={label}
                             >
-                              <span className="gantt__issue-key">{issue.issueKey}</span>
-                              <span className="gantt__issue-summary">{issue.summary}</span>
+                              <span className={styles.issueKey}>{issue.issueKey}</span>
+                              <span className={styles.issueSummary}>{issue.summary}</span>
                             </a>
                           </div>
-                          <div className="gantt__row-track">
+                          <div className={styles.rowTrack}>
                             <a
-                              className={classNames}
+                              className={styles.bar}
+                              data-testid="gantt-bar"
+                              data-kind={bar.kind}
+                              data-overdue={overdue}
+                              data-closed={issue.isClosed}
+                              data-clip-start={geometry.clippedStart}
+                              data-clip-end={geometry.clippedEnd}
                               style={{ left: geometry.left, width: geometry.width, backgroundColor: color }}
                               href={issue.url}
                               target="_blank"
@@ -203,7 +210,7 @@ export function GanttChart({ issues, filter, today, projectNames }: Props) {
                               }}
                               onBlur={() => setTooltip(null)}
                             >
-                              {geometry.width >= 64 ? <span className="gantt__bar-label">{issue.summary}</span> : null}
+                              {geometry.width >= 64 ? <span className={styles.barLabel}>{issue.summary}</span> : null}
                             </a>
                           </div>
                         </div>
@@ -227,20 +234,20 @@ export function GanttChart({ issues, filter, today, projectNames }: Props) {
 function NoDateSection({ issues, projectNames }: { issues: GanttIssue[]; projectNames: Record<number, string> }) {
   const [open, setOpen] = useState(false)
   return (
-    <section className="nodate">
-      <button type="button" className="nodate__toggle" onClick={() => setOpen((value) => !value)}>
+    <section className={styles.noDate}>
+      <button type="button" className={styles.noDateToggle} onClick={() => setOpen((value) => !value)}>
         <span aria-hidden="true">{open ? '▼' : '▶'}</span>
         日付未設定の課題 {issues.length}件
       </button>
       {open ? (
-        <ul className="nodate__list">
+        <ul className={styles.noDateList}>
           {issues.map((issue) => (
             <li key={issue.id}>
-              <span className="gantt__project-chip" style={{ backgroundColor: projectColor(issue.projectId) }} />
+              <span className={styles.projectChip} style={{ backgroundColor: projectColor(issue.projectId) }} />
               <a href={issue.url} target="_blank" rel="noreferrer">
-                <span className="gantt__issue-key">{issue.issueKey}</span> {issue.summary}
+                <span className={styles.issueKey}>{issue.issueKey}</span> {issue.summary}
               </a>
-              <span className="nodate__meta">
+              <span className={styles.noDateMeta}>
                 {projectNames[issue.projectId] ?? issue.projectKey} / {issue.assigneeName ?? '未割り当て'} /{' '}
                 {issue.statusName}
               </span>

@@ -19,6 +19,8 @@ import { LoginPanel } from './components/LoginPanel'
 import { SummaryBar } from './components/SummaryBar'
 import { loadLastSpace, saveLastSpace } from './storage'
 
+import styles from './App.module.css'
+
 /** 初回表示時に自動選択するプロジェクト数の上限。多すぎると初回取得が重くなるため。 */
 const AUTO_SELECT_LIMIT = 5
 
@@ -367,7 +369,7 @@ export default function App() {
   )
 
   if (!sessionChecked) {
-    return <output className="app-loading">読み込み中…</output>
+    return <output className={styles.loading}>読み込み中…</output>
   }
 
   if (!viewer || showLoginPanel) {
@@ -383,27 +385,27 @@ export default function App() {
   }
 
   return (
-    <div className="app">
-      <header className="app__header">
-        <div className="app__brand">
-          <span className="app__logo" aria-hidden="true">
+    <div className={styles.app}>
+      <header className={styles.header}>
+        <div className={styles.brand}>
+          <span className={styles.logo} aria-hidden="true">
             ▤
           </span>
           <div>
-            <h1 className="app__title">CrossGantt for Backlog</h1>
-            <p className="app__space">
+            <h1 className={styles.title}>CrossGantt for Backlog</h1>
+            <p className={styles.space}>
               {viewer.space} / {viewer.name}
             </p>
           </div>
         </div>
-        <div className="app__actions">
-          <button type="button" className="button" onClick={handleReload} disabled={loading}>
+        <div className={styles.actions}>
+          <button type="button" className={styles.button} onClick={handleReload} disabled={loading}>
             再読込
           </button>
-          <button type="button" className="button" onClick={handleCopyUrl}>
+          <button type="button" className={styles.button} onClick={handleCopyUrl}>
             {copied ? 'コピーしました' : 'URL をコピー'}
           </button>
-          <button type="button" className="button" onClick={handleLogout}>
+          <button type="button" className={styles.button} onClick={handleLogout}>
             ログアウト
           </button>
         </div>
@@ -427,13 +429,13 @@ export default function App() {
       />
 
       {loadError ? (
-        <p className="app__error" role="alert">
+        <p className={styles.error} role="alert">
           {loadError}
         </p>
       ) : null}
 
       {filter.projectIds.length === 0 ? (
-        <div className="gantt-empty">
+        <div className={styles.empty}>
           <p>プロジェクトを 1 つ以上選択してください。</p>
         </div>
       ) : (

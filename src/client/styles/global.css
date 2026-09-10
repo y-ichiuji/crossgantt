@@ -1,0 +1,88 @@
+/*
+ * グローバルに必要なものだけを置く。
+ *
+ * - デザイントークン（CSS カスタムプロパティ）
+ * - リセットと素の要素のスタイル
+ *
+ * コンポーネント固有のスタイルは、それぞれの `*.module.css` に置く。
+ */
+
+:root {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --surface-alt: #f0f2f5;
+  --border: #d9dee5;
+  --border-strong: #b9c2cd;
+  --text: #1c2430;
+  --text-muted: #66707d;
+  --accent: #2563eb;
+  --accent-text: #ffffff;
+  --danger: #dc2626;
+  --danger-bg: #fee2e2;
+  --weekend: rgba(0, 0, 0, 0.04);
+  --today: #ef4444;
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 4px 12px rgba(16, 24, 40, 0.08);
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+
+  --control-height: 30px;
+  --row-head-width: 280px;
+  --row-height: 28px;
+  --gantt-header-height: 46px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14181f;
+    --surface: #1b212b;
+    --surface-alt: #222a36;
+    --border: #2f3947;
+    --border-strong: #3d4a5c;
+    --text: #e6eaf0;
+    --text-muted: #98a3b3;
+    --accent: #60a5fa;
+    --accent-text: #0b1220;
+    --danger: #f87171;
+    --danger-bg: #45201f;
+    --weekend: rgba(255, 255, 255, 0.045);
+    --today: #f87171;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.35);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family:
+    system-ui,
+    -apple-system,
+    'Hiragino Kaku Gothic ProN',
+    'Noto Sans JP',
+    Meiryo,
+    sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+a {
+  color: inherit;
+}
