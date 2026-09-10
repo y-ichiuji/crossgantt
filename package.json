@@ -1,0 +1,37 @@
+{
+  "name": "crossgantt",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "setup:skills": "node scripts/setup-skills.mjs",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "$npm_execpath run build && vite preview",
+    "deploy": "$npm_execpath run build && wrangler deploy",
+    "cf-typegen": "wrangler types --env-interface CloudflareBindings",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "verify": "$npm_execpath run lint && $npm_execpath run typecheck && $npm_execpath run test"
+  },
+  "dependencies": {
+    "hono": "^4.12.27",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.11",
+    "@cloudflare/vite-plugin": "^1.42.2",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.0.16",
+    "vite-ssr-components": "^0.6.1",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.104.0"
+  }
+}
