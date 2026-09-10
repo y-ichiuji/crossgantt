@@ -176,23 +176,40 @@ describe('グルーピング', () => {
   })
 })
 
-describe('目盛りと今日線', () => {
+describe('目盛りと今日の列', () => {
   it('月の見出しを出す', () => {
     setup([makeIssue()])
     expect(screen.getByText('2026年9月')).toBeDefined()
   })
 
-  it('表示期間に今日が含まれていれば今日線を引く', () => {
-    setup([makeIssue()])
-    expect(document.querySelector('[data-testid="today-line"]')).not.toBeNull()
+  it('表示期間に今日が含まれていれば今日の列を塗る', () => {
+    setup([makeIssue()], { zoom: 'day' })
+    const column = document.querySelector('[data-testid="today-column"]')
+    expect(column).not.toBeNull()
+    // 線ではなく 1 日分の幅を持つ列であることを確かめる。
+    expect(column?.getAttribute('style')).toContain('width: 30px')
   })
 
-  it('表示期間に今日が含まれなければ今日線を引かない', () => {
+  it('表示期間に今日が含まれなければ今日の列を塗らない', () => {
     setup([makeIssue({ startDate: '2027-01-05', dueDate: '2027-01-20' })], {
       from: '2027-01-01',
       to: '2027-01-31'
     })
-    expect(document.querySelector('[data-testid="today-line"]')).toBeNull()
+    expect(document.querySelector('[data-testid="today-column"]')).toBeNull()
+  })
+
+  it('今日の列は課題名カラムより奥の背景レイヤーに置く', () => {
+    setup([makeIssue()])
+    const column = document.querySelector('[data-testid="today-column"]')
+    const weekend = document.querySelector('[data-testid="weekend-band"]')
+    // 横スクロールで課題名に重ならないよう、土日と同じ背景レイヤーの子にする。
+    expect(weekend).not.toBeNull()
+    expect(column?.parentElement).toBe(weekend?.parentElement)
+  })
+
+  it('ヘッダーの目盛りでも今日を示す', () => {
+    setup([makeIssue()], { zoom: 'day' })
+    expect(document.querySelectorAll('[data-today="true"]')).toHaveLength(1)
   })
 
   it('日ズームでは 1 日ごとの罫線幅を渡す', () => {

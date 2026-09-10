@@ -309,6 +309,31 @@ export function minorTicks(scale: TimelineScale, zoom: Zoom): TimelineTick[] {
   return ticks
 }
 
+/**
+ * 今日を表す帯。線ではなく列そのものを塗るため、位置と幅を返す。
+ *
+ * 区切りはヘッダー下段の目盛りに合わせる。日ズームなら 1 日分、
+ * それ以外は今日を含む 1 週間ぶん（表示期間で切り詰めたもの）になる。
+ * 今日が表示期間の外にあれば null。
+ */
+export function todayBand(scale: TimelineScale, zoom: Zoom, today: string): TimelineTick | null {
+  if (today < scale.from || today > scale.to) {
+    return null
+  }
+  if (zoom === 'day') {
+    return { key: today, label: '', left: xOf(today, scale), width: scale.pxPerDay }
+  }
+  const weekStart = startOfWeek(today)
+  const visibleStart = clampDate(weekStart, scale.from, scale.to)
+  const visibleEnd = clampDate(addDays(weekStart, 6), scale.from, scale.to)
+  return {
+    key: weekStart,
+    label: '',
+    left: xOf(visibleStart, scale),
+    width: (diffDays(visibleStart, visibleEnd) + 1) * scale.pxPerDay
+  }
+}
+
 /** 土日の帯（日ズームのときのみ意味を持つ）。 */
 export function weekendBands(scale: TimelineScale, zoom: Zoom): TimelineTick[] {
   if (zoom !== 'day') {

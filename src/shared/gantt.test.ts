@@ -17,6 +17,7 @@ import {
   statusColor,
   resolveBar,
   summarize,
+  todayBand,
   weekendBands,
   xOf
 } from './gantt'
@@ -242,6 +243,52 @@ describe('目盛り', () => {
     const scale = buildScale('2026-09-01', '2026-09-14', 'day')
     expect(weekendBands(scale, 'day')).toHaveLength(4)
     expect(weekendBands(scale, 'week')).toHaveLength(0)
+  })
+})
+
+describe('todayBand', () => {
+  const scale = buildScale('2026-09-01', '2026-09-30', 'day')
+
+  it('日ズームでは今日 1 日分の列になる', () => {
+    const band = todayBand(scale, 'day', '2026-09-10')
+    expect(band).toEqual({
+      key: '2026-09-10',
+      label: '',
+      left: 9 * scale.pxPerDay,
+      width: scale.pxPerDay
+    })
+  })
+
+  it('週ズームでは今日を含む 1 週間の列になる', () => {
+    const weekScale = buildScale('2026-09-01', '2026-09-30', 'week')
+    // 2026-09-10 は木曜。週の始まりは 9/7（月）。
+    const band = todayBand(weekScale, 'week', '2026-09-10')
+    expect(band?.key).toBe('2026-09-07')
+    expect(band?.width).toBe(7 * weekScale.pxPerDay)
+  })
+
+  it('週の一部が表示期間の外なら、はみ出す分を切り詰める', () => {
+    const weekScale = buildScale('2026-09-09', '2026-09-30', 'week')
+    const band = todayBand(weekScale, 'week', '2026-09-10')
+    // 9/7〜9/8 は表示期間の外なので 9/9〜9/13 の 5 日分。
+    expect(band?.left).toBe(0)
+    expect(band?.width).toBe(5 * weekScale.pxPerDay)
+  })
+
+  it('目盛りの区切りと一致するので、ヘッダー側の強調に使える', () => {
+    const ticks = minorTicks(scale, 'day')
+    const band = todayBand(scale, 'day', '2026-09-10')
+    expect(ticks.some((tick) => tick.key === band?.key)).toBe(true)
+  })
+
+  it('今日が表示期間の外なら null', () => {
+    expect(todayBand(scale, 'day', '2026-08-31')).toBeNull()
+    expect(todayBand(scale, 'day', '2026-10-01')).toBeNull()
+  })
+
+  it('表示期間の端でも列を返す', () => {
+    expect(todayBand(scale, 'day', '2026-09-01')?.left).toBe(0)
+    expect(todayBand(scale, 'day', '2026-09-30')?.left).toBe(29 * scale.pxPerDay)
   })
 })
 
