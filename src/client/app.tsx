@@ -29,12 +29,21 @@ import { FilterBar } from './components/FilterBar'
 import { GanttChart } from './components/GanttChart'
 import { LoginPanel } from './components/LoginPanel'
 import { SummaryBar } from './components/SummaryBar'
+import { loadFilterQuery, saveFilterQuery } from './filter-store'
 import { loadLastSpace, saveLastSpace } from './storage'
 
 import styles from './App.module.css'
 
-/** キーワード入力を取得リクエストへ反映するまでの待ち時間。 */
-const KEYWORD_DEBOUNCE_MS = 400
+/**
+ * キーワード入力を取得リクエストへ反映するまでの待ち時間。
+ *
+ * 1 文字ごとに取り直すと、打ち終わる前に何度も Backlog を叩いてしまう。
+ * 語を打ち切るまで待てる長さにしておく。
+ */
+const KEYWORD_DEBOUNCE_MS = 800
+
+/** 表示条件を IndexedDB へ書き込むまでの待ち時間。連続した操作をまとめる。 */
+const FILTER_SAVE_DEBOUNCE_MS = 500
 
 /** 「コピーしました」の表示を戻すまでの時間。 */
 const COPIED_FEEDBACK_MS = 1500
@@ -81,6 +90,12 @@ export default function App() {
   // サンドボックス iframe の中からは、利用者が開いた URL は見えない。
   const [filter, setFilter] = useState<ViewFilter>(() => parseFilter(new URLSearchParams(loadBootstrap().query)))
   const [debouncedKeyword, setDebouncedKeyword] = useState(filter.keyword)
+  /**
+   * 前回の表示条件を IndexedDB から戻し終えたかどうか。
+   *
+   * 読み出しは非同期なので、終わる前に保存を始めると既定値で上書きしてしまう。
+   */
+  const [filterRestored, setFilterRestored] = useState(false)
 
   const [projects, setProjects] = useState<ProjectSummary[]>([])
   const [members, setMembers] = useState<MemberSummary[]>([])
@@ -98,7 +113,6 @@ export default function App() {
   /** 再読込ボタンでキャッシュを無視するためのカウンタ。 */
   const [reloadToken, setReloadToken] = useState(0)
   const bypassCacheRef = useRef(false)
-  const autoSelectedRef = useRef(false)
 
   const today = useMemo(() => todayKey(), [])
 
@@ -199,8 +213,8 @@ export default function App() {
       setShowLoginPanel(false)
       setAuthError(null)
       // 別スペース・別アカウントで入り直すと、残っているプロジェクト ID は
-      // そのスペースには存在しない。自動選択をやり直せるようにしておく。
-      autoSelectedRef.current = false
+      // そのスペースには存在しない。保存済みの条件を読み直せるようにしておく。
+      setFilterRestored(false)
     }
     void run()
   }, [])
@@ -247,19 +261,46 @@ export default function App() {
     return () => controller.abort()
   }, [viewer, reportError])
 
-  // プロジェクト未選択のまま開かれた場合は、参加しているすべてのプロジェクトを選ぶ。
-  // 自動選択は「一覧を最初に受け取ったとき」の 1 回だけ。選択済みで始まった場合に
-  // フラグを立てずに戻ってしまうと、利用者が最初にクリアした瞬間に全選択へ戻され、
-  // 選択を空にできなくなる。
+  // --- 表示条件の保存と復元 ---
+
+  // 前回の表示条件を IndexedDB から戻す。共有された URL で開かれたときは
+  // そのクエリのほうが利用者の意図に近いので、保存済みの条件より優先する。
   useEffect(() => {
-    if (autoSelectedRef.current || projects.length === 0) {
+    if (!viewer || filterRestored) {
       return
     }
-    autoSelectedRef.current = true
-    if (filter.projectIds.length === 0) {
-      patchFilter({ projectIds: projects.map((project) => project.id) })
+    if (loadBootstrap().query !== '') {
+      setFilterRestored(true)
+      return
     }
-  }, [projects, filter.projectIds.length, patchFilter])
+    let cancelled = false
+    const run = async () => {
+      const query = await loadFilterQuery(viewer.space)
+      if (cancelled) {
+        return
+      }
+      if (query !== null) {
+        // 保存してあるのはクエリ文字列なので、URL 共有とまったく同じ経路で解釈する。
+        // 壊れた値や過大な期間はここで正される。
+        setFilter(parseFilter(new URLSearchParams(query)))
+      }
+      setFilterRestored(true)
+    }
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [viewer, filterRestored])
+
+  // 表示条件は変えるたびに保存し、次に開いたときの初期状態にする。
+  // 復元より先に書くと既定値で上書きしてしまうため、復元の完了を待つ。
+  useEffect(() => {
+    if (!viewer || !filterRestored) {
+      return
+    }
+    const timer = setTimeout(() => void saveFilterQuery(viewer.space, filterQuery), FILTER_SAVE_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+  }, [viewer, filterRestored, filterQuery])
 
   // 依存配列をプリミティブだけで表現するため、配列はカンマ区切りのキーに畳む。
   const projectIdsKey = filter.projectIds.join(',')
@@ -486,13 +527,35 @@ export default function App() {
         </p>
       ) : null}
 
-      {filter.projectIds.length === 0 ? (
-        <div className={styles.empty}>
-          <p>プロジェクトを 1 つ以上選択してください。</p>
-        </div>
-      ) : (
-        <GanttChart issues={issues} filter={filter} today={today} projectNames={projectNames} holidays={holidays} />
-      )}
+      {/*
+       * 取得中はチャートの上に覆いをかける。表示中の内容が古いことを
+       * 一目で分かるようにし、条件を変えた直後に「何も起きていない」ように
+       * 見えるのを防ぐ。
+       */}
+      <div className={styles.chart}>
+        {filter.projectIds.length === 0 ? (
+          <div className={styles.empty}>
+            <p>プロジェクトを 1 つ以上選択してください。</p>
+          </div>
+        ) : (
+          <GanttChart
+            issues={issues}
+            filter={filter}
+            today={today}
+            projectNames={projectNames}
+            holidays={holidays}
+            loading={loading}
+          />
+        )}
+        {loading ? (
+          <div className={styles.loadingOverlay}>
+            <output className={styles.loadingBadge}>
+              <span className={styles.spinner} aria-hidden="true" />
+              読み込み中…
+            </output>
+          </div>
+        ) : null}
+      </div>
     </div>
   )
 }

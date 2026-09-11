@@ -27,7 +27,12 @@ const HOLIDAYS: Holiday[] = [
   { dateKey: '2026-09-23', name: '秋分の日' }
 ]
 
-function setup(issues: GanttIssue[], filter: Partial<ViewFilter> = {}, holidays: Holiday[] = HOLIDAYS) {
+function setup(
+  issues: GanttIssue[],
+  filter: Partial<ViewFilter> = {},
+  holidays: Holiday[] = HOLIDAYS,
+  loading = false
+) {
   render(
     <GanttChart
       issues={issues}
@@ -35,6 +40,7 @@ function setup(issues: GanttIssue[], filter: Partial<ViewFilter> = {}, holidays:
       today={TODAY}
       projectNames={{ 100: 'PJA プロジェクトA', 200: 'PJB プロジェクトB' }}
       holidays={holidays}
+      loading={loading}
     />
   )
   return { user: userEvent.setup() }
@@ -265,6 +271,20 @@ describe('目盛りと今日の列', () => {
   it('週ズームでは土日の帯を出さない', () => {
     setup([makeIssue()], { zoom: 'week' })
     expect(document.querySelectorAll('[data-testid="weekend-band"]')).toHaveLength(0)
+  })
+})
+
+describe('読み込み中', () => {
+  it('スクロールを止める印を付ける', () => {
+    setup([makeIssue()], {}, HOLIDAYS, true)
+    const scroller = document.querySelector('[data-testid="gantt-scroller"]')
+    expect(scroller?.getAttribute('data-loading')).toBe('true')
+  })
+
+  it('読み込みが終われば印を外す', () => {
+    setup([makeIssue()])
+    const scroller = document.querySelector('[data-testid="gantt-scroller"]')
+    expect(scroller?.getAttribute('data-loading')).toBe('false')
   })
 })
 

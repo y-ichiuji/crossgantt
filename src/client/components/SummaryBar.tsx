@@ -38,7 +38,10 @@ export function SummaryBar({ summary, truncated, requestCount, fetchedAt, loadin
 
       <span className={styles.spacer} />
 
-      {loading ? <span className={styles.muted}>読み込み中…</span> : null}
+      {/*
+       * 取得中であることはチャート上の覆いが示すため、ここには出さない。
+       * 代わりに、古いままの取得時刻を見せないよう取り下げる。
+       */}
       {!loading && fetchedAt ? (
         <span className={styles.muted}>
           {formatTime(fetchedAt)} 時点 / Backlog API {requestCount} リクエスト

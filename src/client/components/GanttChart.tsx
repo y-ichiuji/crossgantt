@@ -31,12 +31,19 @@ type Props = {
   projectNames: Record<number, string>
   /** 表示期間内の日本の祝日。取得前や取得に失敗したときは空配列。 */
   holidays: readonly Holiday[]
+  /**
+   * 課題を取得中かどうか。
+   *
+   * 取得中は呼び出し側が覆いをかける。その裏でスクロールバーだけが
+   * 残っていると操作できそうに見えるため、スクロールを止めて隠す。
+   */
+  loading: boolean
 }
 
 /** 行の高さ（px）。CSS 側の値と合わせること。 */
 const ROW_HEIGHT = 28
 
-export function GanttChart({ issues, filter, today, projectNames, holidays }: Props) {
+export function GanttChart({ issues, filter, today, projectNames, holidays, loading }: Props) {
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set())
   const [tooltip, setTooltip] = useState<TooltipState | null>(null)
 
@@ -92,6 +99,7 @@ export function GanttChart({ issues, filter, today, projectNames, holidays }: Pr
       <div
         className={styles.scroller}
         data-testid="gantt-scroller"
+        data-loading={loading}
         style={
           {
             '--timeline-width': `${scale.width}px`,
