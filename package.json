@@ -48,6 +48,7 @@
     "eslint-plugin-regexp": "3.3.0",
     "eslint-plugin-sonarjs": "4.2.0",
     "eslint-plugin-testing-library": "7.16.2",
+    "fake-indexeddb": "6.2.5",
     "happy-dom": "20.13.2",
     "markdownlint-cli2": "0.23.2",
     "oxfmt": "0.66.0",

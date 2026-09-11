@@ -13,6 +13,14 @@
   max-height: calc(100vh - 230px);
 }
 
+/*
+ * 取得中は呼び出し側がチャート全体を覆う。裏でスクロールバーだけが
+ * 動かせそうに見えるのを避けるため、スクロールを止めて隠す。
+ */
+.scroller[data-loading='true'] {
+  overflow: hidden;
+}
+
 .inner {
   position: relative;
   min-width: max-content;

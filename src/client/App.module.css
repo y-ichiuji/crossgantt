@@ -55,3 +55,64 @@
   text-align: center;
   color: var(--text-muted);
 }
+
+/*
+ * チャート領域。取得中はここに覆いをかけるため、重ね合わせの基準にする。
+ * 最小の高さを持たせているのは、まだ 1 件も無い状態で覆いをかけたときに
+ * 領域が潰れて、読み込みが終わった瞬間に大きく飛び跳ねないようにするため。
+ */
+.chart {
+  position: relative;
+  min-height: 240px;
+}
+
+.loadingOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-lg);
+  /* 下の内容がうっすら見える程度に覆い、古い表示だと分かるようにする。 */
+  background: rgba(255, 255, 255, 0.72);
+}
+
+@media (prefers-color-scheme: dark) {
+  .loadingOverlay {
+    background: rgba(20, 24, 31, 0.72);
+  }
+}
+
+.loadingBadge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: var(--text-muted);
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 動きを減らす設定では回転させない。位置が分かれば役目は果たせる。 */
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+}

@@ -13,8 +13,13 @@ export type ScriptRunCall = {
   params: Record<string, string>
 }
 
-/** 1 回の呼び出しに対する応答。Error を返すと失敗ハンドラが呼ばれる。 */
-export type ScriptRunResponder = (call: ScriptRunCall) => ApiEnvelope | Error
+/**
+ * 1 回の呼び出しに対する応答。Error を返すと失敗ハンドラが呼ばれる。
+ *
+ * Promise を返せば応答を保留できる。読み込み中の見え方を確かめるテストは、
+ * 自分の好きなタイミングで解決させる。
+ */
+export type ScriptRunResponder = (call: ScriptRunCall) => ApiEnvelope | Error | Promise<ApiEnvelope | Error>
 
 type Handlers = {
   success?: (value: string) => void
@@ -46,14 +51,15 @@ export function installScriptRun(respond: ScriptRunResponder): ScriptRunStub {
     const params = JSON.parse(paramsJson) as Record<string, string>
     const call: ScriptRunCall = { name, params }
     calls.push(call)
-    queueMicrotask(() => {
-      const result = respond(call)
+    const deliver = async () => {
+      const result = await respond(call)
       if (result instanceof Error) {
         handlers.failure?.(result)
         return
       }
       handlers.success?.(JSON.stringify(result))
-    })
+    }
+    queueMicrotask(() => void deliver())
   }
 
   const chain = (handlers: Handlers): ScriptRunner => ({

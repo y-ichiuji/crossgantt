@@ -41,9 +41,9 @@ describe('SummaryBar', () => {
     expect(screen.queryByText(/件数が多いため一部のみ表示しています/u)).toBeNull()
   })
 
-  it('読み込み中は「読み込み中…」を出す', () => {
+  it('読み込み中は古い取得時刻を出さない', () => {
     setup({ loading: true, fetchedAt: '2026-09-10T03:04:05.000Z' })
-    expect(screen.getByText('読み込み中…')).toBeDefined()
+    expect(screen.queryByText(/時点/u)).toBeNull()
     expect(screen.queryByText(/リクエスト/u)).toBeNull()
   })
 
