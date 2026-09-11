@@ -1,176 +1,182 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
-import { hashKey, matchCachedResponse, putCachedResponse, withJsonCache } from './cache'
+import { createJsonCache, createNullJsonCache } from './cache'
+import { createMemoryCacheStore, sha256Hex } from './test-utils'
 
-type CacheEntry = { response: Response }
-
-/** Cloudflare の `caches.default` を模したインメモリ実装。 */
-function installMemoryCache() {
-  const store = new Map<string, CacheEntry>()
-  const cache = {
-    match: async (request: Request) => store.get(request.url)?.response.clone() ?? undefined,
-    put: async (request: Request, response: Response) => {
-      store.set(request.url, { response: response.clone() })
-    }
-  }
-  const original = (globalThis as { caches?: unknown }).caches
-  ;(globalThis as { caches?: unknown }).caches = { default: cache }
-  return {
-    store,
-    restore: () => {
-      ;(globalThis as { caches?: unknown }).caches = original
-    }
-  }
+function createCache() {
+  const store = createMemoryCacheStore()
+  return { store, cache: createJsonCache(store, sha256Hex) }
 }
 
-afterEach(() => {
-  vi.restoreAllMocks()
-})
-
-describe('putCachedResponse / matchCachedResponse', () => {
-  it('利用者向けの Cache-Control をヒット時にも保つ', async () => {
-    const memory = installMemoryCache()
-    try {
-      // アイコンはセッションに紐づくため共有キャッシュへ載せてはいけない。
-      // 保存時に内部 TTL で上書きしてしまうと、ヒット時にこの指示が消える。
-      const original = new Response('image-bytes', {
-        headers: { 'Content-Type': 'image/png', 'Cache-Control': 'private, max-age=3600' }
-      })
-      await putCachedResponse('icon-key', original, 3600)
-
-      const hit = await matchCachedResponse('icon-key')
-      expect(hit).not.toBeNull()
-      expect(hit?.headers.get('Cache-Control')).toBe('private, max-age=3600')
-      expect(hit?.headers.get('Content-Type')).toBe('image/png')
-      // 退避用のヘッダーは外へ出さない。
-      expect(hit?.headers.get('x-cg-client-cache-control')).toBeNull()
-    } finally {
-      memory.restore()
-    }
-  })
-
-  it('Cache-Control が無いレスポンスはそのまま返す', async () => {
-    const memory = installMemoryCache()
-    try {
-      await putCachedResponse('plain', new Response('x', { headers: { 'Content-Type': 'text/plain' } }), 60)
-      const hit = await matchCachedResponse('plain')
-      expect(await hit?.text()).toBe('x')
-    } finally {
-      memory.restore()
-    }
-  })
-})
-
 describe('hashKey', () => {
-  it('同じ入力からは同じハッシュになる', async () => {
-    expect(await hashKey('a', 'b')).toBe(await hashKey('a', 'b'))
+  const { cache } = createCache()
+
+  it('同じ入力からは同じハッシュになる', () => {
+    expect(cache.hashKey('a', 'b')).toBe(cache.hashKey('a', 'b'))
   })
 
-  it('入力が違えばハッシュも変わる', async () => {
-    expect(await hashKey('a', 'b')).not.toBe(await hashKey('a', 'c'))
+  it('入力が違えばハッシュも変わる', () => {
+    expect(cache.hashKey('a', 'b')).not.toBe(cache.hashKey('a', 'c'))
   })
 
-  it('区切りが異なるだけの入力を区別する', async () => {
-    expect(await hashKey('ab', 'c')).not.toBe(await hashKey('a', 'bc'))
+  it('区切りが異なるだけの入力を区別する', () => {
+    expect(cache.hashKey('ab', 'c')).not.toBe(cache.hashKey('a', 'bc'))
   })
 
-  it('SHA-256 の 16 進表現を返す', async () => {
-    expect(await hashKey('x')).toMatch(/^[0-9a-f]{64}$/u)
+  it('SHA-256 の 16 進表現を返す', () => {
+    expect(cache.hashKey('x')).toMatch(/^[0-9a-f]{64}$/u)
   })
 })
 
-describe('withJsonCache', () => {
-  it('キャッシュが使えない環境では毎回 produce を呼ぶ', async () => {
-    const original = (globalThis as { caches?: unknown }).caches
-    ;(globalThis as { caches?: unknown }).caches = undefined
-    try {
-      const produce = vi.fn(async () => ({ value: 1 }))
-      expect(await withJsonCache('ns', ['k'], 60, false, produce)).toEqual({ value: 1 })
-      expect(await withJsonCache('ns', ['k'], 60, false, produce)).toEqual({ value: 1 })
-      expect(produce).toHaveBeenCalledTimes(2)
-    } finally {
-      ;(globalThis as { caches?: unknown }).caches = original
+describe('withJson', () => {
+  it('2 回目はキャッシュから返す', () => {
+    const { cache } = createCache()
+    const produce = vi.fn(() => ({ value: 1 }))
+
+    cache.withJson('ns', ['k'], 60, false, produce)
+    expect(cache.withJson('ns', ['k'], 60, false, produce)).toEqual({ value: 1 })
+    expect(produce).toHaveBeenCalledTimes(1)
+  })
+
+  it('キーが違えば別のエントリになる', () => {
+    const { cache } = createCache()
+    const produce = vi.fn(() => ({ value: 1 }))
+
+    cache.withJson('ns', ['a'], 60, false, produce)
+    cache.withJson('ns', ['b'], 60, false, produce)
+    expect(produce).toHaveBeenCalledTimes(2)
+  })
+
+  it('名前空間が違えば別のエントリになる', () => {
+    const { cache } = createCache()
+    const produce = vi.fn(() => ({ value: 1 }))
+
+    cache.withJson('one', ['k'], 60, false, produce)
+    cache.withJson('two', ['k'], 60, false, produce)
+    expect(produce).toHaveBeenCalledTimes(2)
+  })
+
+  it('bypass が true なら既存のキャッシュを無視して取り直す', () => {
+    const { cache } = createCache()
+    let counter = 0
+    const produce = vi.fn(() => {
+      counter += 1
+      return { value: counter }
+    })
+
+    cache.withJson('ns', ['k'], 60, false, produce)
+    expect(cache.withJson('ns', ['k'], 60, true, produce)).toEqual({ value: 2 })
+    expect(produce).toHaveBeenCalledTimes(2)
+  })
+
+  it('bypass 後の結果でキャッシュが上書きされる', () => {
+    const { cache } = createCache()
+    let counter = 0
+    const produce = vi.fn(() => {
+      counter += 1
+      return { value: counter }
+    })
+
+    cache.withJson('ns', ['k'], 60, false, produce)
+    cache.withJson('ns', ['k'], 60, true, produce)
+    expect(cache.withJson('ns', ['k'], 60, false, produce)).toEqual({ value: 2 })
+    expect(produce).toHaveBeenCalledTimes(2)
+  })
+
+  it('キャッシュキーに秘密情報をそのまま載せない', () => {
+    const { store, cache } = createCache()
+
+    cache.withJson('ns', ['secret-token'], 60, false, () => ({ value: 1 }))
+    for (const key of store.keys()) {
+      expect(key).not.toContain('secret-token')
     }
   })
 
-  it('2 回目はキャッシュから返す', async () => {
-    const memory = installMemoryCache()
-    try {
-      const produce = vi.fn(async () => ({ value: 1 }))
-      await withJsonCache('ns', ['k'], 60, false, produce)
-      const second = await withJsonCache('ns', ['k'], 60, false, produce)
+  it('期限を過ぎたら取り直す', () => {
+    let now = 1_000_000
+    const cache = createJsonCache(
+      createMemoryCacheStore(() => now),
+      sha256Hex
+    )
+    const produce = vi.fn(() => ({ value: 1 }))
 
-      expect(second).toEqual({ value: 1 })
-      expect(produce).toHaveBeenCalledTimes(1)
-    } finally {
-      memory.restore()
-    }
+    cache.withJson('ns', ['k'], 60, false, produce)
+    now += 61_000
+    cache.withJson('ns', ['k'], 60, false, produce)
+    expect(produce).toHaveBeenCalledTimes(2)
   })
 
-  it('キーが違えば別のエントリになる', async () => {
-    const memory = installMemoryCache()
-    try {
-      const produce = vi.fn(async () => ({ value: 1 }))
-      await withJsonCache('ns', ['a'], 60, false, produce)
-      await withJsonCache('ns', ['b'], 60, false, produce)
-      expect(produce).toHaveBeenCalledTimes(2)
-    } finally {
-      memory.restore()
-    }
+  it('100KB を超える値も分割して保存し、そのまま読み戻せる', () => {
+    const { store, cache } = createCache()
+    // 日本語 1 文字 3 バイトで 1 キーの上限（約 100KB）を確実に超える長さ。
+    const big = { text: 'あ'.repeat(50_000) }
+    const produce = vi.fn(() => big)
+
+    cache.withJson('ns', ['k'], 60, false, produce)
+    expect(cache.withJson('ns', ['k'], 60, false, produce)).toEqual(big)
+    expect(produce).toHaveBeenCalledTimes(1)
+    // 本体 1 つ + 断片 2 つ以上。
+    expect(store.keys().length).toBeGreaterThan(2)
   })
 
-  it('名前空間が違えば別のエントリになる', async () => {
-    const memory = installMemoryCache()
-    try {
-      const produce = vi.fn(async () => ({ value: 1 }))
-      await withJsonCache('one', ['k'], 60, false, produce)
-      await withJsonCache('two', ['k'], 60, false, produce)
-      expect(produce).toHaveBeenCalledTimes(2)
-    } finally {
-      memory.restore()
-    }
+  it('断片が一部欠けていたら取り直す', () => {
+    const { store, cache } = createCache()
+    const produce = vi.fn(() => ({ text: 'あ'.repeat(50_000) }))
+
+    cache.withJson('ns', ['k'], 60, false, produce)
+    // 断片ごとに期限が来るため、一部だけ落ちることがある。
+    const chunkKey = store.keys().find((key) => key.endsWith('#1'))
+    expect(chunkKey).toBeDefined()
+    store.putAll({ [chunkKey ?? '']: '' }, -1)
+
+    cache.withJson('ns', ['k'], 60, false, produce)
+    expect(produce).toHaveBeenCalledTimes(2)
   })
 
-  it('bypass が true なら既存のキャッシュを無視して取り直す', async () => {
-    const memory = installMemoryCache()
-    try {
-      let counter = 0
-      const produce = vi.fn(async () => ({ value: ++counter }))
-      await withJsonCache('ns', ['k'], 60, false, produce)
-      const refreshed = await withJsonCache('ns', ['k'], 60, true, produce)
+  it('断片数の上限を超える値は保存しない', () => {
+    const { cache } = createCache()
+    // 断片は 30,000 文字ごと。上限 40 個を超える長さにする。
+    const produce = vi.fn(() => ({ text: 'x'.repeat(1_300_000) }))
 
-      expect(refreshed).toEqual({ value: 2 })
-      expect(produce).toHaveBeenCalledTimes(2)
-    } finally {
-      memory.restore()
-    }
+    cache.withJson('ns', ['k'], 60, false, produce)
+    cache.withJson('ns', ['k'], 60, false, produce)
+    expect(produce).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('readText / writeText', () => {
+  it('文字列をそのまま読み書きできる', () => {
+    const { cache } = createCache()
+
+    expect(cache.readText('icon', ['1'])).toBeNull()
+    cache.writeText('icon', ['1'], 'data:image/png;base64,AAAA', 60)
+    expect(cache.readText('icon', ['1'])).toBe('data:image/png;base64,AAAA')
   })
 
-  it('bypass 後の結果でキャッシュが上書きされる', async () => {
-    const memory = installMemoryCache()
-    try {
-      let counter = 0
-      const produce = vi.fn(async () => ({ value: ++counter }))
-      await withJsonCache('ns', ['k'], 60, false, produce)
-      await withJsonCache('ns', ['k'], 60, true, produce)
-      const cached = await withJsonCache('ns', ['k'], 60, false, produce)
+  it('キーが違えば混ざらない', () => {
+    const { cache } = createCache()
 
-      expect(cached).toEqual({ value: 2 })
-      expect(produce).toHaveBeenCalledTimes(2)
-    } finally {
-      memory.restore()
-    }
+    cache.writeText('icon', ['1'], 'one', 60)
+    cache.writeText('icon', ['2'], 'two', 60)
+    expect(cache.readText('icon', ['1'])).toBe('one')
+    expect(cache.readText('icon', ['2'])).toBe('two')
+  })
+})
+
+describe('createNullJsonCache', () => {
+  it('毎回 produce を呼ぶ', () => {
+    const cache = createNullJsonCache()
+    const produce = vi.fn(() => ({ value: 1 }))
+
+    cache.withJson('ns', ['k'], 60, false, produce)
+    cache.withJson('ns', ['k'], 60, false, produce)
+    expect(produce).toHaveBeenCalledTimes(2)
   })
 
-  it('キャッシュキーに秘密情報をそのまま載せない', async () => {
-    const memory = installMemoryCache()
-    try {
-      await withJsonCache('ns', ['secret-token'], 60, false, async () => ({ value: 1 }))
-      const urls = [...memory.store.keys()]
-      expect(urls).toHaveLength(1)
-      expect(urls[0]).not.toContain('secret-token')
-    } finally {
-      memory.restore()
-    }
+  it('書いた文字列も覚えない', () => {
+    const cache = createNullJsonCache()
+
+    cache.writeText('icon', ['1'], 'x', 60)
+    expect(cache.readText('icon', ['1'])).toBeNull()
   })
 })

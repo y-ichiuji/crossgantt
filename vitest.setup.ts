@@ -4,8 +4,18 @@
 import { cleanup } from '@testing-library/react'
 import { afterEach } from 'vitest'
 
-/** クライアントテストの共通セットアップ。各テストの後に DOM を片付ける。 */
+import { resetBootstrap } from './src/client/bootstrap'
+import { resetIconCache } from './src/client/icons'
+
+/**
+ * クライアントテストの共通セットアップ。
+ *
+ * DOM に加えて、モジュールに閉じた状態（起動時の設定とアイコンの取得結果）も
+ * 捨てる。これらはテストをまたいで残ると結果が前のテストに依存してしまう。
+ */
 afterEach(() => {
   cleanup()
   localStorage.clear()
+  resetBootstrap()
+  resetIconCache()
 })

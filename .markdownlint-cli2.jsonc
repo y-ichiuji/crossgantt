@@ -12,5 +12,5 @@
   "globs": ["**/*.md"],
   // .gitignore に載っているものは対象外。取得してきた skills も同様に見ない。
   "gitignore": true,
-  "ignores": ["node_modules/**", "dist/**", ".wrangler/**", "skills/**", ".agents/**"]
+  "ignores": ["node_modules/**", "dist/**", "gas-dist/**", ".agents/**"]
 }

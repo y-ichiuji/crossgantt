@@ -1,17 +1,16 @@
 {
   "name": "crossgantt",
-  "version": "1.1.1",
+  "version": "2.0.0",
   "private": true,
   "description": "Backlog の複数プロジェクト・複数担当者の課題を 1 枚のガントチャートで横断表示するビューア",
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "setup:skills": "node scripts/setup-skills.mjs",
     "dev": "vite",
-    "build": "vite build",
-    "preview": "pnpm run build && vite preview",
-    "deploy": "pnpm run build && wrangler deploy",
-    "cf-typegen": "wrangler types --env-interface CloudflareBindings",
+    "build": "node scripts/build-gas.mjs",
+    "smoke": "node scripts/smoke.mjs",
+    "push": "pnpm run build && clasp push --force",
+    "deploy": "pnpm run build && node scripts/deploy-gas.mjs",
     "lint": "oxlint --type-aware",
     "lint:fix": "oxlint --type-aware --fix",
     "format": "oxfmt",
@@ -28,20 +27,21 @@
     "spellcheck": "cspell --no-progress --show-suggestions \"**\""
   },
   "dependencies": {
-    "hono": "4.13.5",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   },
   "devDependencies": {
-    "@cloudflare/vite-plugin": "1.50.0",
+    "@google/clasp": "3.4.1",
     "@testing-library/react": "16.3.3",
     "@testing-library/user-event": "14.6.7",
+    "@types/google-apps-script": "2.0.13",
     "@types/node": "26.4.1",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
     "@vitejs/plugin-react": "6.0.5",
     "actionlint": "2.0.6",
     "cspell": "10.3.0",
+    "esbuild": "0.28.2",
     "eslint-plugin-css-modules": "2.12.0",
     "eslint-plugin-no-unsanitized": "4.1.5",
     "eslint-plugin-react-hooks": "7.1.1",
@@ -57,9 +57,7 @@
     "stylelint-config-standard": "40.0.0",
     "typescript": "7.0.2",
     "vite": "8.2.0",
-    "vite-ssr-components": "0.6.1",
-    "vitest": "4.1.11",
-    "wrangler": "4.118.0"
+    "vitest": "4.1.11"
   },
   "engines": {
     "node": ">=22"

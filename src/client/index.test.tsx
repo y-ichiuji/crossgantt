@@ -1,19 +1,23 @@
 import { waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const originalFetch = globalThis.fetch
+import { installBootstrap, installScriptRun, removeBootstrap } from './test-utils'
+import type { ScriptRunStub } from './test-utils'
+
+let stub: ScriptRunStub | null = null
 
 beforeEach(() => {
   vi.resetModules()
   document.body.replaceChildren()
+  installBootstrap()
   // 起動直後にセッション確認へ行くため、未ログインの応答を返しておく。
-  globalThis.fetch = vi.fn(async () =>
-    Response.json({ error: 'ログインしていません' }, { status: 401 })
-  ) as typeof fetch
+  stub = installScriptRun(() => ({ ok: false, status: 401, error: 'ログインしていません', detail: null }))
 })
 
 afterEach(() => {
-  globalThis.fetch = originalFetch
+  stub?.restore()
+  stub = null
+  removeBootstrap()
   vi.restoreAllMocks()
 })
 

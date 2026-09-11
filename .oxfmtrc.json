@@ -11,12 +11,5 @@
   "insertFinalNewline": true,
   "sortImports": true,
   "sortPackageJson": true,
-  "ignorePatterns": [
-    "dist/**",
-    ".wrangler/**",
-    "public/**",
-    "skills/**",
-    "worker-configuration.d.ts",
-    "package-lock.json"
-  ]
+  "ignorePatterns": ["dist/**", "gas-dist/**", "package-lock.json"]
 }

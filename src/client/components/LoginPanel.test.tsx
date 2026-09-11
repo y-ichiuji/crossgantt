@@ -62,7 +62,7 @@ describe('LoginPanel', () => {
   it('読み取り専用であることを説明する', () => {
     setup()
     expect(screen.getByText(/読み取り専用/u)).toBeDefined()
-    expect(screen.getByText(/HttpOnly Cookie/u)).toBeDefined()
+    expect(screen.getByText(/ブラウザには渡りません/u)).toBeDefined()
   })
 
   it('API キーの入力欄を持たない', () => {

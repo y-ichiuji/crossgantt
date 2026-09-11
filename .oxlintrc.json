@@ -23,7 +23,7 @@
     "browser": true,
     "es2024": true
   },
-  "ignorePatterns": ["dist/**", ".wrangler/**", "public/**", "worker-configuration.d.ts", "skills/**"],
+  "ignorePatterns": ["dist/**", "gas-dist/**"],
   // 外部の ESLint プラグイン。oxlint では alpha 扱いの機能だが、
   // 本体に無い検査（React Compiler のルール、CSS Modules のクラス名、
   // 正規表現、Testing Library、SonarJS）を得るために例外的に使っている。
@@ -135,8 +135,6 @@
     "unicorn/prefer-query-selector": "off",
     // projectColor の `| 0` は Math.imul のための int32 変換で、Math.trunc とは違う。
     "unicorn/prefer-math-trunc": "off",
-    // Hono の onError は Node のコールバック規約ではない。
-    "promise/prefer-await-to-callbacks": "off",
     // 型は TypeScript が持っているので、JSDoc に @param / @returns は書かない。
     "jsdoc/require-param": "off",
     "jsdoc/require-param-type": "off",

@@ -55,9 +55,9 @@
       "matchPackageNames": ["react", "react-dom", "@types/react", "@types/react-dom"]
     },
     {
-      "description": "Cloudflare 関連はまとめて上げる",
-      "groupName": "cloudflare",
-      "matchPackageNames": ["wrangler", "@cloudflare/vite-plugin"]
+      "description": "Apps Script 関連はまとめて上げる",
+      "groupName": "apps-script",
+      "matchPackageNames": ["@google/clasp", "@types/google-apps-script"]
     },
     {
       "description": "oxc ツールチェーンはまとめて上げる",

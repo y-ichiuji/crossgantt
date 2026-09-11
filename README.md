@@ -13,7 +13,7 @@ Backlog 標準のガントチャートは 1 プロジェクト単位でしか表
 - 各行に**担当者のアイコン**を表示
 - 期限超過かつ未完了の課題を警告色でハイライトし、グループごとの遅延件数を表示
 - 課題バーのクリックで Backlog の該当課題を新規タブで開く
-- 表示条件がすべて URL に載るので、そのままチームへリンク共有できる
+- 表示条件を「URL をコピー」でウェブアプリの URL に載せ、そのままチームへリンク共有できる
 - ライト / ダークテーマの自動切り替え
 
 ### やらないこと
@@ -32,43 +32,92 @@ Backlog 標準のガントチャートは 1 プロジェクト単位でしか表
 
 ### 認証の仕組み
 
-Backlog の **OAuth 2.0** でログインします。
+Google アカウントでのログイン（Apps Script の Web アプリ）と、Backlog の **OAuth 2.0** の
+2 段構えです。
 
-- アクセストークンとリフレッシュトークンは **Cloudflare KV 上のセッションにのみ保存**され、ブラウザには渡りません
-- ブラウザが持つのは HttpOnly / Secure / SameSite=Lax な Cookie に入ったセッション ID だけです
-- アクセストークンは有効期限が近づくとサーバー側で自動的に更新されます
-- CSRF 対策として、認可リクエストの `state` を KV と Cookie の両方に持たせて突き合わせます
+- Web アプリは「アクセスしているユーザーとして実行」で公開します。誰が使っているかは
+  Google のログインで決まるため、独自のセッション ID を発行する必要がありません
+- Backlog のアクセストークンとリフレッシュトークンは、その Google アカウント専用の領域
+  （`PropertiesService.getUserProperties()`）にのみ保存され、ブラウザには渡りません
+- アクセストークンは有効期限が近づくとサーバー側で自動的に更新されます。更新は
+  `LockService` で直列化し、リフレッシュトークンのローテーションと競合しないようにしています
+- CSRF 対策として、認可リクエストの `state` にサーバーが払い出した使い捨ての値（nonce）を
+  載せ、コールバックで照合して消費します
+- `state` には「どのスペースへ認可を求めたか」も載せます。この値はクライアント由来なので、
+  受け取ったあとに必ず許可ドメインの検証を通し直します
 
-### OAuth アプリの登録（セルフホストする場合）
+## セットアップ（セルフホストする場合）
 
-[Backlog Developer サイト](https://backlog.com/developer/applications/)でアプリを登録し、リダイレクト URI に次を設定します。
+### 1. Apps Script プロジェクトを作る
+
+```sh
+pnpm install
+pnpm exec clasp login
+pnpm exec clasp create-script --title CrossGantt --type webapp --rootDir gas-dist
+```
+
+生成された `.clasp.json` の `rootDir` が `gas-dist` になっていることを確認してください
+（`.clasp.json` は `.gitignore` 済みです。手で作る場合は `.clasp.json.example` を使ってください）。
+
+### 2. いちど公開して URL を確定させる
+
+Backlog に登録するリダイレクト URI には、この Web アプリの `/exec` URL を使います。
+先にデプロイして URL を確定させます。
+
+```sh
+GAS_ALLOW_NEW_DEPLOYMENT=1 pnpm run deploy
+pnpm exec clasp list-deployments
+```
+
+`@HEAD` ではないほう（説明が付いているもの）のデプロイ ID を控えてください。
+`@HEAD` は Apps Script が自動で持っている開発用のデプロイで、`/exec` の URL を持ちません。
+
+**以降は同じデプロイを更新し続けます。** 新しいデプロイを作ると URL が変わり、Backlog 側の
+登録と食い違ってログインできなくなります。事故を防ぐため、2 回目以降は ID の指定が必須です。
+
+```sh
+GAS_DEPLOYMENT_ID=<控えたデプロイ ID> pnpm run deploy
+```
+
+### 3. Backlog に OAuth アプリを登録する
+
+[Backlog Developer サイト](https://backlog.com/developer/applications/)でアプリを登録し、
+リダイレクト URI に Web アプリの URL をそのまま設定します。
 
 ```text
-https://<worker のドメイン>/api/auth/callback
+https://script.google.com/macros/s/<デプロイ ID>/exec
 ```
 
-Backlog は 1 アプリにつき 1 つのリダイレクト URI しか登録できないため、ローカル開発でもログインを試したい場合は
-`http://localhost:5173/api/auth/callback` を設定した別アプリを登録してください。
+### 4. クライアント ID とシークレットを設定する
 
-取得したクライアント ID とシークレットを設定します。
+Apps Script エディタの「プロジェクトの設定」→「スクリプト プロパティ」に次を追加します。
 
-```sh
-pnpm exec wrangler secret put BACKLOG_CLIENT_ID
-pnpm exec wrangler secret put BACKLOG_CLIENT_SECRET
-```
+| プロパティ              | 必須 | 内容                                                    |
+| ----------------------- | ---- | ------------------------------------------------------- |
+| `BACKLOG_CLIENT_ID`     | ○    | Backlog で発行したクライアント ID                       |
+| `BACKLOG_CLIENT_SECRET` | ○    | Backlog で発行したクライアントシークレット              |
+| `OAUTH_REDIRECT_URI`    | ○    | 手順 3 で登録した `/exec` の URL                        |
+| `WEB_APP_URL`           |      | 共有 URL の土台。未設定なら `OAUTH_REDIRECT_URI` を使う |
 
-ローカル開発では `.dev.vars.example` を `.dev.vars` にコピーして値を入れてください（`.dev.vars` は `.gitignore` 済みです）。
+スクリプトプロパティはリポジトリに含まれません。コードと一緒にコミットしないでください。
 
-セッション保存用の KV 名前空間も必要です。
+Web アプリの URL は `ScriptApp.getService().getUrl()` でも取得できますが、あえて使わず
+設定で受け取っています。Apps Script の**承認スコープはコードの静的解析で決まる**ため、
+`ScriptApp` に触れるだけで「トリガーの管理」まで含むスコープを利用者全員に承認させることに
+なり、承認しきれないと画面が出ません。この画面に本当に必要なのは外部サービスへの接続だけです。
+`getUrl()` が「いま開いているデプロイ」の URL を返す（`/dev` で開くとリダイレクト URI が
+食い違う）という性質もあり、設定で固定するほうが確実です。
 
-```sh
-pnpm exec wrangler kv namespace create SESSIONS
-# 出力された id を wrangler.jsonc の kv_namespaces に設定する
-```
+### 5. 公開範囲を決める
+
+`gas/appsscript.json` の `webapp.access` が公開範囲です。既定は `DOMAIN`
+（同じ Google Workspace ドメインの利用者だけ）です。用途に応じて `MYSELF` や `ANYONE`
+へ変えてください。`executeAs` は利用者ごとにトークンを分けるため `USER_ACCESSING` から
+変えないでください。
 
 ## 開発
 
-Node.js 22 以上が必要です（Wrangler の要件）。パッケージマネージャーは pnpm で、
+Node.js 22 以上が必要です。パッケージマネージャーは pnpm で、
 `package.json` の `packageManager` に完全性ハッシュ付きで固定してあります。
 corepack を有効にすれば、そのバージョンが検証のうえ自動で使われます。
 
@@ -78,47 +127,103 @@ pnpm install
 pnpm dev           # http://localhost:5173
 ```
 
-| コマンド            | 内容                                    |
-| ------------------- | --------------------------------------- |
-| `pnpm dev`          | 開発サーバー                            |
-| `pnpm build`        | 本番ビルド                              |
-| `pnpm preview`      | ビルドしてローカルで確認                |
-| `pnpm deploy`       | Cloudflare Workers へデプロイ           |
-| `pnpm lint`         | oxlint（type-aware ルール込み）         |
-| `pnpm lint:fix`     | oxlint の自動修正                       |
-| `pnpm lint:css`     | stylelint による CSS の検査             |
-| `pnpm lint:css:fix` | stylelint の自動修正                    |
-| `pnpm lint:md`      | markdownlint による Markdown の検査     |
-| `pnpm lint:md:fix`  | markdownlint の自動修正                 |
-| `pnpm lint:actions` | actionlint による GitHub Actions の検査 |
-| `pnpm spellcheck`   | cspell によるスペルチェック             |
-| `pnpm format`       | oxfmt による整形                        |
-| `pnpm format:check` | 整形されているかの確認                  |
-| `pnpm typecheck`    | `tsc --noEmit`                          |
-| `pnpm test`         | Vitest                                  |
-| `pnpm verify`       | 上記の検証をまとめて実行                |
-| `pnpm cf-typegen`   | `wrangler.jsonc` 変更後の型再生成       |
+`pnpm dev` は画面の見た目を確認するためのものです。Apps Script のサービスはブラウザには
+無いため、この状態では API 呼び出しとログインは動きません（サーバーが無いことを
+伝えるエラーになります）。実際の動作は `pnpm run push` で反映して Web アプリ上で確認します。
 
-サーバーを起動した状態で `node scripts/smoke.mjs` を実行すると、HTML の配信と認証まわりのガードを一通り確認できます。
+| コマンド            | 内容                                                             |
+| ------------------- | ---------------------------------------------------------------- |
+| `pnpm dev`          | 画面だけの開発サーバー                                           |
+| `pnpm build`        | `gas-dist/` を組み立てる                                         |
+| `pnpm smoke`        | `gas-dist/` が push できる形かを検査                             |
+| `pnpm push`         | ビルドして `clasp push`（デプロイは更新しない）                  |
+| `pnpm deploy`       | ビルドして push し、デプロイを更新（`GAS_DEPLOYMENT_ID` が必要） |
+| `pnpm lint`         | oxlint（type-aware ルール込み）                                  |
+| `pnpm lint:fix`     | oxlint の自動修正                                                |
+| `pnpm lint:css`     | stylelint による CSS の検査                                      |
+| `pnpm lint:css:fix` | stylelint の自動修正                                             |
+| `pnpm lint:md`      | markdownlint による Markdown の検査                              |
+| `pnpm lint:md:fix`  | markdownlint の自動修正                                          |
+| `pnpm lint:actions` | actionlint による GitHub Actions の検査                          |
+| `pnpm spellcheck`   | cspell によるスペルチェック                                      |
+| `pnpm format`       | oxfmt による整形                                                 |
+| `pnpm format:check` | 整形されているかの確認                                           |
+| `pnpm typecheck`    | `tsc --noEmit`                                                   |
+| `pnpm test`         | Vitest                                                           |
+| `pnpm verify`       | 上記の検証をまとめて実行                                         |
+
+### ビルドの仕組み
+
+Apps Script は ES モジュールを解釈せず、画像や JS を返す URL も持てません。
+そのため成果物を次の形に組み立てます（`scripts/build-gas.mjs`）。
+
+```text
+gas-dist/
+  appsscript.json   マニフェスト（gas/ からのコピー）
+  Code.js           サーバー側を 1 つのグローバルへまとめた IIFE + トップレベル関数
+  index.html        画面のテンプレート（gas/ からのコピー）
+  app-css.html      クライアントのスタイル（<style> で包んだもの）
+  app-js.html       クライアントのバンドル（Base64 にして div へ載せたもの）
+```
+
+- クライアントは vite で 1 つの JS と 1 つの CSS にまとめる
+- サーバーは esbuild で ES2019 相当まで落としてまとめる。V8 ランタイムがどの
+  ECMAScript 版まで含むかは公表されていないため、構文は広く通る範囲に寄せている
+- 組み込みの不足（`Array.prototype.toSorted`）は `src/server/gas/polyfill.ts` で補う
+- `UrlFetchApp` は **2KB を超える URL を受け付けない**。プロジェクトを選ぶほど
+  `projectId[]` が並ぶため、課題取得は URL に収まる組へ分けて問い合わせ、
+  結果を課題 ID でマージする。それでも収まらない場合は担当者・ステータスの
+  絞り込みを Backlog へ渡すのをやめ、取得後に同じ条件で絞る（課題の応答には
+  担当者 ID とステータス ID が含まれるため、結果は変わらず取得量だけが増える）
+- クライアントのバンドルは **Base64 にして運ぶ**（後述）
+- `pnpm smoke` は成果物を読み、Apps Script に無い機能（`fetch` / `URL` /
+  `URLSearchParams` / `setTimeout` など）をサーバー側が使っていないかを検査する
+
+### なぜバンドルを Base64 で運ぶのか
+
+`HtmlService` は**ファイルの中身を HTML として解析する**。JavaScript には
+`i<n` のような比較演算子があり、パーサはこれをタグの開始と解釈する。
+`<script>` で包んでいても中身を作り替えてしまい、内容が静かに欠ける。
+
+実際、224,247 文字のバンドルが読み出しの時点で 170,468 文字まで削られ、
+React が起動せず画面が空になった。サーバー側は成功したままで、保存されている
+ファイル自体も無傷なので、原因が非常に分かりにくい。
+
+Base64 には `<` も `&` も `>` も現れないため、どう解析されても 1 文字も
+変わらない。ページ側の小さな読み込み処理がこれをデコードし、`<script>`
+要素として実行する。
+
+同じ理由で、テンプレート（`gas/index.html`）に書くスクリプトでは比較演算子の
+`<` を使わない（`i < n` ではなく `i !== n` と書く）。起動時の設定も
+`<script type="application/json">` に載せ、JavaScript として解釈させない。
+`pnpm smoke` がどちらも検査する。
 
 ## 構成
 
 テストは実装ファイルと同じディレクトリに `*.test.ts(x)` として置いています。
 
 ```text
+gas/
+  appsscript.json        Web アプリのマニフェスト（公開範囲・実行者）
+  index.html             HtmlService のテンプレート
 src/
-  index.tsx              Hono のエントリ。SSR シェルと /api のマウント
-  server/
-    routes.ts            プロキシ API のルーティングと入力検証
-    cache.ts             Cloudflare Cache API による短時間キャッシュ
-    test-utils.ts        テスト用のインメモリ KV など
+  server/                Apps Script 上で動く部分。すべて同期処理
+    api.ts               API の本体（入力検証・キャッシュ・認証ガード）
+    cache.ts             CacheService による短時間キャッシュ（100KB 超は分割）
+    fetcher.ts           外部 HTTP 呼び出しの抽象（UrlFetchApp に対応）
+    failure.ts           クライアントへ伝える失敗の型
+    holidays.ts          日本の祝日の取得
+    test-utils.ts        テスト用のインメモリ実装
+    gas/                 Apps Script のグローバルに触る唯一の層
+      main.ts            doGet / apiCall / include
+      runtime.ts         UrlFetchApp・CacheService・PropertiesService などの接続
+      html.ts            HtmlService による画面の配信
+      polyfill.ts        足りない組み込みの補完
     auth/
-      config.ts          バインディングと OAuth 設定の解決
-      oauth.ts           Backlog OAuth 2.0（認可 URL・トークン交換・更新）
-      session.ts         セッションと state の KV 保存、Cookie の組み立て
-      routes.ts          /api/auth/login · /callback · /session · /logout
+      oauth.ts           Backlog OAuth 2.0（トークン交換・更新）
+      session.ts         セッションと nonce の UserProperties 保存
+      callback.ts        認可コールバックの処理
     backlog/
-      space.ts           スペースドメインの検証（オープンプロキシ化の防止）
       client.ts          Backlog API クライアント（リトライ・レート制限・トークンの masking）
       issues.ts          課題取得のオーケストレーション（クエリ組み立て・ページング・正規化）
       masters.ts         プロジェクト / 担当者 / ステータスの取得
@@ -127,8 +232,13 @@ src/
     date.ts              日付ユーティリティ
     gantt.ts             バー配置・グルーピング・目盛りの計算
     filter.ts            表示条件と URL クエリの相互変換
+    space.ts             スペースドメインの検証（オープンプロキシ化の防止）
+    oauth.ts             認可 URL と state の組み立て・分解
     types.ts             共有の型定義
   client/                React のクライアント
+    api.ts               google.script.run 経由のサーバー呼び出し
+    bootstrap.ts         doGet が埋め込んだ設定の受け取り
+    icons.ts             担当者アイコンのまとめ取得
     App.module.css       画面全体のスタイル
     styles/
       global.css         デザイントークンとリセット（唯一のグローバル CSS）
@@ -149,9 +259,23 @@ docs/design.md           設計ドキュメント
 - 状態（遅延・完了・バーの種類など）はクラス名ではなく `data-*` 属性で表し、
   CSS は `[data-overdue='true']` のように参照する。テストが見た目の実装から独立する
 
-### なぜ Worker を経由するのか
+### レート制限への当たりを減らす工夫
 
-ブラウザから Backlog API を直接呼ばず、必ず Cloudflare Worker を経由させています。
+Backlog のレート制限は区分ごとに 1 分あたりの回数で効く。プロジェクトを
+数十個選ぶ使い方では、素朴に実装すると簡単に使い切ってしまう。
+
+- **マスタ情報はプロジェクト単位でキャッシュする**。担当者とステータスは
+  `/projects/{id}/users` と `/projects/{id}/statuses` をプロジェクトごとに
+  叩くため、選択した組を 1 つのキーにすると選択を 1 つ変えるだけで全件を
+  取り直すことになる。プロジェクトごとに覚えておけば、増えたぶんだけで済む
+- **保持時間を長めに取る**。マスタは 30 分、課題は 3 分。最新にしたいときは
+  「再読込」がキャッシュを無視する
+- **大きな応答も分割して保持する**。CacheService は 1 キー 100KB までなので、
+  課題が数千件になる場合は断片に分けて書き込む
+
+### なぜサーバーを経由するのか
+
+ブラウザから Backlog API を直接呼ばず、必ず Apps Script 側を経由させています。
 
 1. Backlog API はブラウザからのクロスオリジン呼び出しを想定していない
 2. ページングと複数クエリのマージをサーバー側で完結させ、往復回数を減らせる
@@ -166,7 +290,7 @@ GitHub Actions で次を回しています。
 | ワークフロー | 契機                                      | 内容                                                                                                                       |
 | ------------ | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | `ci.yml`     | `main` への push、すべての PR             | 整形の確認 → lint（TS / CSS / Markdown / Actions）→ スペルチェック → 型チェック → テスト、別ジョブでビルドとスモークテスト |
-| `deploy.yml` | **CI と CodeQL が `main` で成功したあと** | Cloudflare Workers へデプロイし、公開後にスモークテスト                                                                    |
+| `deploy.yml` | **CI と CodeQL が `main` で成功したあと** | ビルドと成果物の検査を行い、clasp で Apps Script へ push してデプロイを更新                                                |
 | `codeql.yml` | `main` への push、すべての PR、毎週       | CodeQL によるコードの脆弱性スキャン                                                                                        |
 
 すべての action はタグではなくコミットハッシュで固定しています（Renovate がハッシュごと更新します）。
@@ -179,10 +303,14 @@ GitHub Actions で次を回しています。
 
 デプロイには次のリポジトリシークレットが必要です。
 
-| シークレット            | 取得元                                                                                        |
-| ----------------------- | --------------------------------------------------------------------------------------------- |
-| `CLOUDFLARE_API_TOKEN`  | Cloudflare ダッシュボード → My Profile → API Tokens → 「Edit Cloudflare Workers」テンプレート |
-| `CLOUDFLARE_ACCOUNT_ID` | `pnpm exec wrangler whoami` で確認できる Account ID                                           |
+| シークレット        | 取得元                                                                          |
+| ------------------- | ------------------------------------------------------------------------------- |
+| `CLASP_CREDENTIALS` | `clasp login` 後にホームディレクトリへ作られる `.clasprc.json` の中身をそのまま |
+| `GAS_SCRIPT_ID`     | `.clasp.json` の `scriptId`、または Apps Script エディタのプロジェクト設定      |
+| `GAS_DEPLOYMENT_ID` | `pnpm exec clasp list-deployments` で表示される、運用中のデプロイ ID            |
+
+`CLASP_CREDENTIALS` はリフレッシュトークンを含みます。ワークフローでは実行のたびに
+書き出して、`always()` のステップで必ず消しています。
 
 ### ブランチ運用
 
@@ -224,7 +352,14 @@ GitHub Flow に沿っています。
 
 ## 技術構成
 
-Hono + React 19 + Vite + Cloudflare Workers（セッション保存に Workers KV）。ガントチャートは flex 行 + 絶対配置バーで自前実装しており、外部のガントライブラリには依存していません。
+React 19 + Vite + Google Apps Script（Web アプリ）。サーバー側は Apps Script の
+`UrlFetchApp` / `CacheService` / `PropertiesService` / `LockService` の上に組んでおり、
+外部ライブラリには依存していません。ガントチャートは flex 行 + 絶対配置バーで
+自前実装しており、外部のガントライブラリにも依存していません。
+
+Apps Script には `fetch` も `Promise` を待つ手段も無いため、サーバー側は最初から
+すべて同期処理として書いています。並列化は `UrlFetchApp.fetchAll` に対応する
+`Fetcher`（複数リクエストをまとめて受け取る関数）へ委ねています。
 
 整形は oxfmt に一本化しています。TypeScript / JavaScript だけでなく CSS・Markdown・JSON・YAML も
 oxfmt が扱うため、整形ツールはこれ 1 つです。テストは Vitest。依存パッケージのバージョンは

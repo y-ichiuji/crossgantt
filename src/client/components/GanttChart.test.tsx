@@ -84,9 +84,10 @@ describe('バーの描画', () => {
     expect(bar.style.color).toBe('#1c2430')
   })
 
-  it('担当者のアイコンを行に表示する', () => {
+  it('担当者のアイコン枠を行に表示する', () => {
+    // 画像そのものはサーバーから data URL で届くまで現れない。
     setup([makeIssue()])
-    expect(document.querySelector('img')?.getAttribute('src')).toBe('/api/users/10/icon')
+    expect(screen.getAllByTitle('山田太郎').length).toBeGreaterThan(0)
   })
 
   it('遅延している課題には遅延の印を付ける', () => {
@@ -158,7 +159,7 @@ describe('グルーピング', () => {
   it('担当者別のときは見出しにアイコンを出す', () => {
     setup([makeIssue()], { groupBy: 'assignee' })
     const group = screen.getByRole('button', { name: /山田太郎/u })
-    expect(group.querySelector('img')?.getAttribute('src')).toBe('/api/users/10/icon')
+    expect(within(group).getByTitle('山田太郎')).toBeDefined()
   })
 
   it('プロジェクト別のときは見出しにアイコンを出さない', () => {

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <base target="_top" />
+    <?!= include('app-css'); ?>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="application/json" id="crossgantt-bootstrap">
+      <?!= bootstrap; ?>
+    </script>
+    <?!= include('app-js'); ?>
+    <script>
+      ;(function () {
+        var holder = document.getElementById('crossgantt-app-source')
+        var binary = atob(holder.textContent)
+        var bytes = new Uint8Array(binary.length)
+        for (var i = 0; i !== binary.length; i += 1) {
+          bytes[i] = binary.charCodeAt(i)
+        }
+        var source = new TextDecoder('utf-8').decode(bytes)
+        holder.remove()
+        var element = document.createElement('script')
+        element.textContent = source
+        document.body.appendChild(element)
+      })()
+    </script>
+  </body>
+</html>

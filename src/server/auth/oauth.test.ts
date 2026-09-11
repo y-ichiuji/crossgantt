@@ -1,14 +1,7 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
-import { jsonResponse } from '../test-utils'
-import {
-  buildAuthorizeUrl,
-  exchangeCode,
-  needsRefresh,
-  OAuthError,
-  refreshTokens,
-  TOKEN_REFRESH_MARGIN_MS
-} from './oauth'
+import { createFetcherStub, jsonResponse, textResponse } from '../test-utils'
+import { exchangeCode, needsRefresh, OAuthError, refreshTokens, TOKEN_REFRESH_MARGIN_MS } from './oauth'
 import type { OAuthConfig } from './oauth'
 
 const SPACE = 'example.backlog.jp'
@@ -17,48 +10,32 @@ const NOW = Date.parse('2026-09-10T00:00:00Z')
 const CONFIG: OAuthConfig = {
   clientId: 'client-id',
   clientSecret: 'client-secret',
-  redirectUri: 'https://crossgantt.example.workers.dev/api/auth/callback'
+  redirectUri: 'https://script.google.com/macros/s/deployment-id/exec'
 }
 
-describe('buildAuthorizeUrl', () => {
-  it('スペースの認可エンドポイントへ必要なパラメータを付ける', () => {
-    const url = new URL(buildAuthorizeUrl(SPACE, CONFIG, 'state-value'))
-    expect(url.origin).toBe(`https://${SPACE}`)
-    expect(url.pathname).toBe('/OAuth2AccessRequest.action')
-    expect(url.searchParams.get('response_type')).toBe('code')
-    expect(url.searchParams.get('client_id')).toBe('client-id')
-    expect(url.searchParams.get('redirect_uri')).toBe(CONFIG.redirectUri)
-    expect(url.searchParams.get('state')).toBe('state-value')
-  })
-
-  it('クライアントシークレットを認可 URL に載せない', () => {
-    expect(buildAuthorizeUrl(SPACE, CONFIG, 'state-value')).not.toContain(CONFIG.clientSecret)
-  })
-})
+const TOKEN_BODY = {
+  access_token: 'access',
+  token_type: 'Bearer',
+  expires_in: 3600,
+  refresh_token: 'refresh'
+}
 
 describe('exchangeCode', () => {
-  it('認可コードをトークンに交換する', async () => {
-    const captured: { url: string; body: string }[] = []
-    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      captured.push({ url: String(input), body: String(init?.body) })
-      return jsonResponse({
-        access_token: 'access',
-        token_type: 'Bearer',
-        expires_in: 3600,
-        refresh_token: 'refresh'
-      })
-    }) as unknown as typeof fetch
+  it('認可コードをトークンに交換する', () => {
+    const stub = createFetcherStub(() => jsonResponse(TOKEN_BODY))
 
-    const tokens = await exchangeCode(SPACE, CONFIG, 'the-code', NOW, fetchImpl)
+    const tokens = exchangeCode(SPACE, CONFIG, 'the-code', NOW, stub.fetcher)
 
     expect(tokens).toEqual({
       accessToken: 'access',
       refreshToken: 'refresh',
       expiresAt: NOW + 3600 * 1000
     })
-    expect(captured[0].url).toBe(`https://${SPACE}/api/v2/oauth2/token`)
+    expect(stub.requests[0].url).toBe(`https://${SPACE}/api/v2/oauth2/token`)
+    expect(stub.requests[0].method).toBe('post')
+    expect(stub.requests[0].contentType).toBe('application/x-www-form-urlencoded')
 
-    const body = new URLSearchParams(captured[0].body)
+    const body = new URLSearchParams(stub.requests[0].payload)
     expect(body.get('grant_type')).toBe('authorization_code')
     expect(body.get('code')).toBe('the-code')
     expect(body.get('redirect_uri')).toBe(CONFIG.redirectUri)
@@ -66,62 +43,73 @@ describe('exchangeCode', () => {
     expect(body.get('client_secret')).toBe('client-secret')
   })
 
-  it('400 が返ったら 401 相当のエラーにする', async () => {
-    const fetchImpl = vi.fn(async () => new Response('invalid_grant', { status: 400 })) as unknown as typeof fetch
-    await expect(exchangeCode(SPACE, CONFIG, 'bad', NOW, fetchImpl)).rejects.toMatchObject({
-      name: 'OAuthError',
-      status: 401
-    })
+  it('クライアントシークレットを URL に載せない', () => {
+    const stub = createFetcherStub(() => jsonResponse(TOKEN_BODY))
+
+    exchangeCode(SPACE, CONFIG, 'the-code', NOW, stub.fetcher)
+
+    expect(stub.requests[0].url).not.toContain(CONFIG.clientSecret)
   })
 
-  it('500 が返ったら 502 相当のエラーにする', async () => {
-    const fetchImpl = vi.fn(async () => new Response('boom', { status: 500 })) as unknown as typeof fetch
-    await expect(exchangeCode(SPACE, CONFIG, 'code', NOW, fetchImpl)).rejects.toMatchObject({ status: 502 })
+  it('400 が返ったら 401 相当のエラーにする', () => {
+    const stub = createFetcherStub(() => textResponse(400, 'invalid_grant'))
+
+    expect(() => exchangeCode(SPACE, CONFIG, 'bad', NOW, stub.fetcher)).toThrow(
+      expect.objectContaining({ name: 'OAuthError', status: 401 })
+    )
   })
 
-  it('レスポンスの形が想定と違えばエラーにする', async () => {
-    const fetchImpl = vi.fn(async () => jsonResponse({ unexpected: true })) as unknown as typeof fetch
-    await expect(exchangeCode(SPACE, CONFIG, 'code', NOW, fetchImpl)).rejects.toThrow(OAuthError)
+  it('500 が返ったら 502 相当のエラーにする', () => {
+    const stub = createFetcherStub(() => textResponse(500, 'boom'))
+
+    expect(() => exchangeCode(SPACE, CONFIG, 'code', NOW, stub.fetcher)).toThrow(
+      expect.objectContaining({ status: 502 })
+    )
   })
 
-  it('通信そのものに失敗したら 502 にする', async () => {
-    const fetchImpl = vi.fn(async () => {
+  it('レスポンスの形が想定と違えばエラーにする', () => {
+    const stub = createFetcherStub(() => jsonResponse({ unexpected: true }))
+
+    expect(() => exchangeCode(SPACE, CONFIG, 'code', NOW, stub.fetcher)).toThrow(OAuthError)
+  })
+
+  it('JSON として読めない応答もエラーにする', () => {
+    const stub = createFetcherStub(() => textResponse(200, 'not json'))
+
+    expect(() => exchangeCode(SPACE, CONFIG, 'code', NOW, stub.fetcher)).toThrow(OAuthError)
+  })
+
+  it('通信そのものに失敗したら 502 にする', () => {
+    const stub = createFetcherStub(() => {
       throw new TypeError('network down')
-    }) as unknown as typeof fetch
-    await expect(exchangeCode(SPACE, CONFIG, 'code', NOW, fetchImpl)).rejects.toMatchObject({ status: 502 })
+    })
+
+    expect(() => exchangeCode(SPACE, CONFIG, 'code', NOW, stub.fetcher)).toThrow(
+      expect.objectContaining({ status: 502 })
+    )
   })
 })
 
 describe('refreshTokens', () => {
-  it('リフレッシュトークンで更新する', async () => {
-    const captured: string[] = []
-    const fetchImpl = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
-      captured.push(String(init?.body))
-      return jsonResponse({
-        access_token: 'new-access',
-        token_type: 'Bearer',
-        expires_in: 3600,
-        refresh_token: 'new-refresh'
-      })
-    }) as unknown as typeof fetch
+  it('リフレッシュトークンで更新する', () => {
+    const stub = createFetcherStub(() =>
+      jsonResponse({ ...TOKEN_BODY, access_token: 'new-access', refresh_token: 'new-refresh' })
+    )
 
-    const tokens = await refreshTokens(SPACE, CONFIG, 'old-refresh', NOW, fetchImpl)
+    const tokens = refreshTokens(SPACE, CONFIG, 'old-refresh', NOW, stub.fetcher)
 
     expect(tokens.accessToken).toBe('new-access')
     expect(tokens.refreshToken).toBe('new-refresh')
 
-    const body = new URLSearchParams(captured[0])
+    const body = new URLSearchParams(stub.requests[0].payload)
     expect(body.get('grant_type')).toBe('refresh_token')
     expect(body.get('refresh_token')).toBe('old-refresh')
   })
 
-  it('リフレッシュトークンが返らない場合は元の値を引き継ぐ', async () => {
-    const fetchImpl = vi.fn(async () =>
-      jsonResponse({ access_token: 'new-access', token_type: 'Bearer', expires_in: 3600, refresh_token: '' })
-    ) as unknown as typeof fetch
+  it('リフレッシュトークンが返らない場合は元の値を引き継ぐ', () => {
+    const stub = createFetcherStub(() => jsonResponse({ ...TOKEN_BODY, refresh_token: '' }))
 
-    const tokens = await refreshTokens(SPACE, CONFIG, 'old-refresh', NOW, fetchImpl)
-    expect(tokens.refreshToken).toBe('old-refresh')
+    expect(refreshTokens(SPACE, CONFIG, 'old-refresh', NOW, stub.fetcher).refreshToken).toBe('old-refresh')
   })
 })
 
