@@ -58,8 +58,23 @@
   }
 }
 
+/*
+ * スクロールバーはどこにも描画しない。スクロール自体は従来どおり行える。
+ *
+ * 画面の幅と高さをガントチャートの表示に使い切りたいため、
+ * スクロールバーが領域を削ったり、sticky で固定した行ヘッダーやヘッダー行に
+ * 重なったりしないようにしている。
+ *
+ * `scrollbar-width` は Firefox と Chromium 121 以降、
+ * `::-webkit-scrollbar` は Safari と古い Chromium 向け。
+ */
 * {
   box-sizing: border-box;
+  scrollbar-width: none;
+}
+
+*::-webkit-scrollbar {
+  display: none;
 }
 
 html,

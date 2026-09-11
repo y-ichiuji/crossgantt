@@ -24,7 +24,7 @@
     "lint:css:fix": "stylelint --fix \"**/*.css\"",
     "lint:md": "markdownlint-cli2",
     "lint:md:fix": "markdownlint-cli2 --fix",
-    "spellcheck": "cspell --no-progress --show-suggestions \"**\""
+    "spellcheck": "cspell --no-progress --show-suggestions --dot \"**\""
   },
   "dependencies": {
     "react": "19.2.8",

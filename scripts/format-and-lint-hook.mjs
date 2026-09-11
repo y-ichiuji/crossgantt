@@ -3,6 +3,8 @@
  *
  * 標準入力でフックのイベント JSON を受け取り、`tool_input.file_path` を取り出す。
  * 整形は常に適用し、lint エラーが残っている場合は exit 2 で Claude に差し戻す。
+ * 実行するコマンドは `pnpm run verify` と揃えてあり、フックを通ったファイルは
+ * CI でも同じ検査を通る。
  *
  * シェルスクリプトではなく Node で書いているのは、このリポジトリの全ファイルを
  * oxfmt / oxlint の対象に収めるため。`.sh` を 1 つ残すと、そのためだけに
@@ -15,29 +17,90 @@ import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 
-/** 拡張子ごとに、整形と lint をどのコマンドで行うか。 */
-const HANDLERS = [
+/** oxfmt が整形できる拡張子。ここに無いものは整形せず lint だけ行う。 */
+const FORMAT_EXTENSIONS = [
+  '.ts',
+  '.tsx',
+  '.mts',
+  '.cts',
+  '.js',
+  '.mjs',
+  '.cjs',
+  '.json',
+  '.jsonc',
+  '.yml',
+  '.yaml',
+  '.css',
+  '.md'
+]
+
+/** スペルチェックしても意味がなく、cspell も読めないファイル。 */
+const BINARY_EXTENSIONS = [
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.gif',
+  '.webp',
+  '.avif',
+  '.ico',
+  '.woff',
+  '.woff2',
+  '.ttf',
+  '.otf',
+  '.eot',
+  '.pdf',
+  '.zip',
+  '.gz'
+]
+
+const GITHUB_WORKFLOW_DIR = '.github/workflows'
+
+/**
+ * 上から順に評価し、`appliesTo` が真になるものを全て実行する。
+ *
+ * 1 ファイルに複数の lint が当たることがある（例: ワークフローの YAML は
+ * actionlint と cspell の両方）。`command` は node_modules/.bin のコマンド名、
+ * `script` はこのリポジトリのスクリプトを指す。
+ */
+const LINTERS = [
   {
-    extensions: ['.ts', '.tsx', '.mts', '.cts', '.js', '.mjs', '.cjs'],
-    format: (file) => ['oxfmt', [file]],
-    lint: (file) => ['oxlint', ['--type-aware', file]]
+    appliesTo: (file) => hasExtension(file, ['.ts', '.tsx', '.mts', '.cts', '.js', '.mjs', '.cjs']),
+    command: 'oxlint',
+    args: (file) => ['--type-aware', file]
   },
   {
-    extensions: ['.json', '.jsonc', '.yml', '.yaml'],
-    format: (file) => ['oxfmt', [file]],
-    lint: null
+    appliesTo: (file) => hasExtension(file, ['.css']),
+    command: 'stylelint',
+    args: (file) => [file]
   },
   {
-    extensions: ['.css'],
-    format: (file) => ['oxfmt', [file]],
-    lint: (file) => ['stylelint', [file]]
+    appliesTo: (file) => hasExtension(file, ['.md']),
+    command: 'markdownlint-cli2',
+    args: (file) => [file]
   },
   {
-    extensions: ['.md'],
-    format: (file) => ['oxfmt', [file]],
-    lint: (file) => ['markdownlint-cli2', [file]]
+    // actionlint はファイル単位の引数を取らず、ワークフロー全体をまとめて検査する。
+    appliesTo: (file) => isGithubWorkflow(file) && hasExtension(file, ['.yml', '.yaml']),
+    script: 'scripts/actionlint.mjs',
+    args: () => []
+  },
+  {
+    // スペルチェックはファイルの種類を問わず全てに当てる。
+    appliesTo: (file) => !hasExtension(file, BINARY_EXTENSIONS),
+    command: 'cspell',
+    args: (file) => ['--no-progress', '--no-summary', '--show-suggestions', '--dot', file]
   }
 ]
+
+/** 拡張子が候補のいずれかと一致するか。 */
+function hasExtension(file, extensions) {
+  return extensions.includes(path.extname(file).toLowerCase())
+}
+
+/** GitHub Actions のワークフローとして置かれているか。 */
+function isGithubWorkflow(file) {
+  return path.dirname(file).split(path.sep).join('/') === GITHUB_WORKFLOW_DIR
+}
 
 /** 標準入力を最後まで読む。 */
 async function readStdin() {
@@ -54,6 +117,11 @@ function run(command, args, cwd) {
     cwd,
     encoding: 'utf8'
   })
+}
+
+/** このリポジトリの Node スクリプトを同期実行する。 */
+function runScript(script, args, cwd) {
+  return spawnSync(process.execPath, [script, ...args], { cwd, encoding: 'utf8' })
 }
 
 const projectDir = process.env.CLAUDE_PROJECT_DIR ?? process.cwd()
@@ -77,23 +145,31 @@ if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) {
   process.exit(0)
 }
 
-const handler = HANDLERS.find((entry) => entry.extensions.includes(path.extname(filePath)))
-if (!handler || !existsSync(filePath)) {
+if (!existsSync(filePath)) {
   process.exit(0)
 }
 
-const [formatCommand, formatArgs] = handler.format(relative)
-run(formatCommand, formatArgs, projectDir)
-
-if (!handler.lint) {
-  process.exit(0)
+if (hasExtension(relative, FORMAT_EXTENSIONS)) {
+  run('oxfmt', [relative], projectDir)
 }
 
-const [lintCommand, lintArgs] = handler.lint(relative)
-const lint = run(lintCommand, lintArgs, projectDir)
+const failures = []
+for (const linter of LINTERS) {
+  if (!linter.appliesTo(relative)) {
+    continue
+  }
 
-if (lint.status !== 0) {
-  const output = `${lint.stdout ?? ''}${lint.stderr ?? ''}`.trim()
-  process.stderr.write(`${lintCommand} が ${relative} で問題を報告しました。修正してください。\n\n${output}\n`)
+  const args = linter.args(relative)
+  const label = linter.command ?? linter.script
+  const result = linter.command ? run(linter.command, args, projectDir) : runScript(linter.script, args, projectDir)
+
+  if (result.status !== 0) {
+    const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim()
+    failures.push(`${label} が ${relative} で問題を報告しました。修正してください。\n\n${output}`)
+  }
+}
+
+if (failures.length > 0) {
+  process.stderr.write(`${failures.join('\n\n')}\n`)
   process.exit(2)
 }
