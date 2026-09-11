@@ -6,16 +6,25 @@
  * クラス名に状態を混ぜないことで、テストが見た目の実装から独立する。
  */
 
+/*
+ * 高さは呼び出し側（チャート領域）の残りに合わせる。
+ *
+ * `flex: 0 1 auto` は「余っても伸ばさず、足りなければ縮める」。課題が数件の
+ * ときに枠だけが画面いっぱいに伸びるのを避けつつ、多いときは画面内に収めて
+ * ここだけをスクロールさせる。`min-height: 0` が無いと中身の高さより小さく
+ * ならず、ページ全体がはみ出してしまう。
+ */
 .scroller {
   composes: panel from '../styles/controls.module.css';
   position: relative;
   overflow: auto;
-  max-height: calc(100vh - 230px);
+  flex: 0 1 auto;
+  min-height: 0;
 }
 
 /*
- * 取得中は呼び出し側がチャート全体を覆う。裏でスクロールバーだけが
- * 動かせそうに見えるのを避けるため、スクロールを止めて隠す。
+ * 取得中は呼び出し側がチャート全体を覆う。覆いの裏で中身だけが
+ * 動いてしまうのを避けるため、スクロールを止める。
  */
 .scroller[data-loading='true'] {
   overflow: hidden;
@@ -330,8 +339,10 @@
   font-size: 12px;
 }
 
+/* 日付未設定の一覧はチャートと違って縮めない。件数が少なく、隠れると気付けない。 */
 .noDate {
   composes: panel from '../styles/controls.module.css';
+  flex: 0 0 auto;
   margin-top: 10px;
   padding: 8px 12px;
 }

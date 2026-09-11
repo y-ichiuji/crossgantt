@@ -401,9 +401,15 @@ oxlint 本体に無い検査は、外部の ESLint プラグインを `jsPlugins
 `jsPlugins` は oxlint 側で alpha 扱いかつ semver の対象外ですが、CSS Modules のクラス名の
 検証のように本体では代えの利かない検査があるため、例外として採用しています。
 
+Claude Code のフック（`scripts/format-and-lint-hook.mjs`）は、編集されたファイルの拡張子を見て
+上の表と同じツールを走らせます。整形は oxfmt が扱える拡張子に対して常に適用し、lint が
+問題を報告した場合は exit 2 でエージェントに差し戻します。cspell は拡張子を問わず全ファイルに、
+actionlint は `.github/workflows` 配下のワークフローに当たります。`pnpm verify` で落ちる変更に
+その場で気付けるようにするための仕組みです。
+
 シェルスクリプトは意図的に置いていません。`.sh` を 1 つ残すと、そのためだけに
-shellcheck（インストール時にバイナリを取得する）を足すことになるため、
-Claude Code のフックも `scripts/format-and-lint-hook.mjs` として Node で書いています。
+shellcheck（インストール時にバイナリを取得する）を足すことになるため、フックも Node で
+書いています。
 
 > `oxlint --type-aware` は型情報を使う lint ルールを実行するもので、型エラー自体は検出しません。
 > そのため型検査は `tsc --noEmit`（`pnpm typecheck`）で別途行っています。
