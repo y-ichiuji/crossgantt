@@ -75,40 +75,11 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # ビルド時に .dev.vars が dist/ へコピーされ、preview はそちらを読む。
-      # そのため、ビルドより前に用意しておく必要がある。
-      - name: プレビュー用のダミー OAuth 設定を用意
-        env:
-          BACKLOG_CLIENT_ID: ci-dummy-client-id
-          BACKLOG_CLIENT_SECRET: ci-dummy-client-secret
-        run: |
-          printf 'BACKLOG_CLIENT_ID=%s\nBACKLOG_CLIENT_SECRET=%s\n' \
-            "$BACKLOG_CLIENT_ID" "$BACKLOG_CLIENT_SECRET" > .dev.vars
-
+      # Apps Script へ push できる形（gas-dist/）を組み立てる。
       - name: ビルド
         run: pnpm run build
 
-      # 実際に起動して、ログイン前に確認できる範囲のスモークテストを流す。
-      - name: スモークテスト
-        run: |
-          # host を明示しないと IPv6 だけに bind され、127.0.0.1 へ届かないことがある。
-          pnpm exec vite preview --port 4173 --host 127.0.0.1 > preview.log 2>&1 &
-          ready=0
-          for _ in $(seq 1 60); do
-            if curl -sf -o /dev/null http://127.0.0.1:4173/; then
-              ready=1
-              break
-            fi
-            sleep 1
-          done
-          if [ "$ready" -ne 1 ]; then
-            echo 'プレビューサーバーが起動しませんでした'
-            echo '--- preview.log ---'
-            cat preview.log
-            exit 1
-          fi
-          node scripts/smoke.mjs http://127.0.0.1:4173 || {
-            echo '--- preview.log ---'
-            cat preview.log
-            exit 1
-          }
+      # Web アプリは実際にデプロイしないと動かせないため、
+      # 成果物が「push すれば動く形」になっているかを検査する。
+      - name: 成果物の検査
+        run: pnpm run smoke

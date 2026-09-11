@@ -4,82 +4,99 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { makeIssue, MEMBERS, PROJECTS, STATUSES } from '../shared/test-fixtures'
 import App from './app'
-
-const originalFetch = globalThis.fetch
-
-type Handler = (url: URL, init: RequestInit | undefined) => Response
-
-let requestedUrls: string[]
-
-function json(body: unknown, status = 200): Response {
-  return Response.json(body, { status })
-}
+import { installBootstrap, installScriptRun, removeBootstrap } from './test-utils'
+import type { ScriptRunCall, ScriptRunResponder, ScriptRunStub } from './test-utils'
 
 const VIEWER = { id: 42, userId: null, name: '山田太郎', space: 'example.backlog.jp' }
 
-/** ログイン済みで課題が 1 件返る、標準的な応答。 */
-function defaultHandler(loggedIn: boolean): Handler {
-  return (url) => {
-    if (url.pathname === '/api/auth/session') {
-      return loggedIn ? json(VIEWER) : json({ error: 'ログインしていません' }, 401)
+const WEB_APP_URL = 'https://script.google.com/macros/s/deployment-id/exec'
+
+let stub: ScriptRunStub | null = null
+
+function ok(data: unknown) {
+  return { ok: true as const, data }
+}
+
+function failure(status: number, error: string) {
+  return { ok: false as const, status, error, detail: null }
+}
+
+/** ログイン済みで課題が 2 件返る、標準的な応答。 */
+function defaultResponder(loggedIn: boolean): ScriptRunResponder {
+  return ({ name }) => {
+    switch (name) {
+      case 'session': {
+        return loggedIn ? ok(VIEWER) : failure(401, 'ログインしていません')
+      }
+      case 'logout': {
+        return ok(null)
+      }
+      case 'projects': {
+        return ok(PROJECTS)
+      }
+      case 'members': {
+        return ok(MEMBERS)
+      }
+      case 'statuses': {
+        return ok(STATUSES)
+      }
+      case 'holidays': {
+        return ok([])
+      }
+      case 'icons': {
+        return ok({})
+      }
+      case 'issues': {
+        return ok({
+          issues: [makeIssue({ startDate: null, dueDate: null, id: 9, issueKey: 'PJA-9' }), makeIssue()],
+          truncated: false,
+          requestCount: 6,
+          fetchedAt: new Date().toISOString()
+        })
+      }
+      default: {
+        return failure(404, '存在しない API です')
+      }
     }
-    if (url.pathname === '/api/auth/logout') {
-      return new Response(null, { status: 204 })
-    }
-    if (url.pathname === '/api/projects') {
-      return json(PROJECTS)
-    }
-    if (url.pathname === '/api/members') {
-      return json(MEMBERS)
-    }
-    if (url.pathname === '/api/statuses') {
-      return json(STATUSES)
-    }
-    if (url.pathname === '/api/issues') {
-      return json({
-        issues: [makeIssue({ startDate: null, dueDate: null, id: 9, issueKey: 'PJA-9' }), makeIssue()],
-        truncated: false,
-        requestCount: 6,
-        fetchedAt: new Date().toISOString()
-      })
-    }
-    return json({ error: 'not found' }, 404)
   }
 }
 
-function stubFetch(handler: Handler) {
-  globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
-    requestedUrls.push(raw)
-    return handler(new URL(raw, 'http://localhost'), init)
-  }) as typeof fetch
+function install(responder: ScriptRunResponder) {
+  stub = installScriptRun(responder)
+  return stub
+}
+
+/** 特定の API への呼び出しだけを取り出す。 */
+function callsTo(name: string): ScriptRunCall[] {
+  return (stub?.calls ?? []).filter((call) => call.name === name)
 }
 
 beforeEach(() => {
-  requestedUrls = []
-  window.history.replaceState(null, '', '/')
+  installBootstrap({ webAppUrl: WEB_APP_URL })
 })
 
 afterEach(() => {
-  globalThis.fetch = originalFetch
+  stub?.restore()
+  stub = null
+  removeBootstrap()
   vi.restoreAllMocks()
 })
 
 describe('起動時', () => {
   it('セッション確認中は読み込み中を出す', () => {
-    stubFetch(defaultHandler(false))
+    install(defaultResponder(false))
     render(<App />)
     expect(screen.getByText('読み込み中…')).toBeDefined()
   })
 
   it('未ログインならログイン画面を出す', async () => {
-    stubFetch(defaultHandler(false))
+    install(defaultResponder(false))
     render(<App />)
     expect(await screen.findByRole('button', { name: 'Backlog でログイン' })).toBeDefined()
   })
 
   it('ログイン済みならガント画面を出す', async () => {
-    stubFetch(defaultHandler(true))
+    install(defaultResponder(true))
     render(<App />)
     expect(await screen.findByText('example.backlog.jp / 山田太郎')).toBeDefined()
   })
@@ -87,7 +104,7 @@ describe('起動時', () => {
 
 describe('ログイン済みの表示', () => {
   beforeEach(() => {
-    stubFetch(defaultHandler(true))
+    install(defaultResponder(true))
   })
 
   it('プロジェクトを自動選択して課題を取得する', async () => {
@@ -95,10 +112,9 @@ describe('ログイン済みの表示', () => {
     await screen.findByText('example.backlog.jp / 山田太郎')
 
     await waitFor(() => {
-      expect(requestedUrls.some((url) => url.startsWith('/api/issues'))).toBe(true)
+      expect(callsTo('issues')).toHaveLength(1)
     })
-    const issuesUrl = new URL(requestedUrls.find((url) => url.startsWith('/api/issues')) as string, 'http://localhost')
-    expect(issuesUrl.searchParams.get('projectIds')).toBe('100,200')
+    expect(callsTo('issues')[0].params.projectIds).toBe('100,200')
   })
 
   it('取得した課題をガントに描く', async () => {
@@ -116,18 +132,11 @@ describe('ログイン済みの表示', () => {
     })
   })
 
-  it('表示条件を URL に反映する', async () => {
-    render(<App />)
-    await waitFor(() => {
-      expect(window.location.search).toContain('projects=100%2C200')
-    })
-  })
-
   it('ズームを変えても再取得しない', async () => {
     const user = userEvent.setup()
     render(<App />)
     await waitFor(() => {
-      expect(requestedUrls.filter((url) => url.startsWith('/api/issues'))).toHaveLength(1)
+      expect(callsTo('issues')).toHaveLength(1)
     })
 
     // 既定のズームは「日」なので、「日」を押しても値は変わらず何も検証できない。
@@ -136,22 +145,21 @@ describe('ログイン済みの表示', () => {
     await waitFor(() => {
       expect(screen.getByRole('button', { name: '週' }).getAttribute('aria-pressed')).toBe('true')
     })
-    expect(requestedUrls.filter((url) => url.startsWith('/api/issues'))).toHaveLength(1)
+    expect(callsTo('issues')).toHaveLength(1)
   })
 
   it('再読込ボタンでキャッシュを無視して取り直す', async () => {
     const user = userEvent.setup()
     render(<App />)
     await waitFor(() => {
-      expect(requestedUrls.filter((url) => url.startsWith('/api/issues'))).toHaveLength(1)
+      expect(callsTo('issues')).toHaveLength(1)
     })
 
     await user.click(screen.getByRole('button', { name: '再読込' }))
     await waitFor(() => {
-      const issueRequests = requestedUrls.filter((url) => url.startsWith('/api/issues'))
-      expect(issueRequests).toHaveLength(2)
-      expect(issueRequests[1]).toContain('refresh=1')
+      expect(callsTo('issues')).toHaveLength(2)
     })
+    expect(callsTo('issues')[1].params.refresh).toBe('1')
   })
 
   it('ログアウトするとログイン画面に戻る', async () => {
@@ -161,24 +169,38 @@ describe('ログイン済みの表示', () => {
 
     await user.click(screen.getByRole('button', { name: 'ログアウト' }))
     expect(await screen.findByRole('button', { name: 'Backlog でログイン' })).toBeDefined()
-    expect(requestedUrls).toContain('/api/auth/logout')
+    expect(callsTo('logout')).toHaveLength(1)
+  })
+})
+
+describe('共有 URL', () => {
+  it('ウェブアプリの URL に表示条件を付けてコピーする', async () => {
+    // 画面はサンドボックス iframe の中にあるため、location.href をコピーしても
+    // 他の人が開ける URL にはならない。
+    install(defaultResponder(true))
+
+    // userEvent はクリップボードの代替実装を用意する。書かれた値はここから読める。
+    const user = userEvent.setup()
+    render(<App />)
+    await screen.findByText('example.backlog.jp / 山田太郎')
+    await waitFor(() => {
+      expect(callsTo('issues')).toHaveLength(1)
+    })
+
+    await user.click(screen.getByRole('button', { name: 'URL をコピー' }))
+    await screen.findByText('コピーしました')
+
+    const copied = new URL(await navigator.clipboard.readText())
+    expect(`${copied.origin}${copied.pathname}`).toBe(WEB_APP_URL)
+    expect(copied.searchParams.get('projects')).toBe('100,200')
   })
 })
 
 describe('エラーの扱い', () => {
   it('課題取得に失敗したらメッセージを出す', async () => {
-    stubFetch((url) => {
-      if (url.pathname === '/api/auth/session') {
-        return json(VIEWER)
-      }
-      if (url.pathname === '/api/issues') {
-        return json({ error: 'Backlog のレート制限に達しました' }, 429)
-      }
-      if (url.pathname === '/api/projects') {
-        return json(PROJECTS)
-      }
-      return json([])
-    })
+    install((call) =>
+      call.name === 'issues' ? failure(429, 'Backlog のレート制限に達しました') : defaultResponder(true)(call)
+    )
 
     render(<App />)
     expect(await screen.findByRole('alert')).toBeDefined()
@@ -186,52 +208,57 @@ describe('エラーの扱い', () => {
   })
 
   it('途中で 401 になったらログイン画面に戻す', async () => {
-    stubFetch((url) => {
-      if (url.pathname === '/api/auth/session') {
-        return json(VIEWER)
-      }
-      if (url.pathname === '/api/projects') {
-        return json({ error: 'セッションの有効期限が切れています' }, 401)
-      }
-      return json([])
-    })
+    install((call) =>
+      call.name === 'projects' ? failure(401, 'セッションの有効期限が切れています') : defaultResponder(true)(call)
+    )
 
     render(<App />)
     expect(await screen.findByRole('button', { name: 'Backlog でログイン' })).toBeDefined()
     expect(screen.getByRole('alert').textContent).toContain('セッションの有効期限')
   })
 
-  it('コールバックの auth_error を読み取って表示し URL から消す', async () => {
-    window.history.replaceState(null, '', '/?auth_error=state_expired')
-    stubFetch(defaultHandler(false))
+  it('コールバックが返した理由コードを説明に変えて表示する', async () => {
+    installBootstrap({ webAppUrl: WEB_APP_URL, authError: 'state_expired' })
+    install(defaultResponder(false))
 
     render(<App />)
     expect(await screen.findByRole('alert')).toBeDefined()
     expect(screen.getByRole('alert').textContent).toContain('認可の有効期限が切れました')
-    expect(window.location.search).not.toContain('auth_error')
   })
 
-  it('未知の auth_error でもコードを添えて表示する', async () => {
-    window.history.replaceState(null, '', '/?auth_error=weird_thing')
-    stubFetch(defaultHandler(false))
+  it('未知の理由コードでもコードを添えて表示する', async () => {
+    installBootstrap({ webAppUrl: WEB_APP_URL, authError: 'weird_thing' })
+    install(defaultResponder(false))
 
     render(<App />)
     const alert = await screen.findByRole('alert')
     expect(alert.textContent).toContain('weird_thing')
   })
+
+  it('OAuth 未設定のままログインしようとしたら理由を出す', async () => {
+    installBootstrap({ webAppUrl: WEB_APP_URL, configured: false })
+    install(defaultResponder(false))
+
+    const user = userEvent.setup()
+    render(<App />)
+    await user.type(await screen.findByLabelText('スペースドメイン'), 'example.backlog.jp')
+    await user.click(screen.getByRole('button', { name: 'Backlog でログイン' }))
+
+    expect(screen.getByRole('alert').textContent).toContain('OAuth 設定が未完了')
+  })
 })
 
-describe('URL からの復元', () => {
-  it('クエリの表示条件を初期状態に反映する', async () => {
-    window.history.replaceState(null, '', '/?projects=200&group=project&zoom=day')
-    stubFetch(defaultHandler(true))
+describe('初期表示条件の復元', () => {
+  it('サーバーから渡されたクエリを初期状態に反映する', async () => {
+    // Apps Script の Web アプリでは、利用者が開いた URL は doGet だけが知っている。
+    installBootstrap({ webAppUrl: WEB_APP_URL, query: 'projects=200&group=project&zoom=day' })
+    install(defaultResponder(true))
 
     render(<App />)
     await waitFor(() => {
-      expect(requestedUrls.some((url) => url.startsWith('/api/issues'))).toBe(true)
+      expect(callsTo('issues')).toHaveLength(1)
     })
-    const issuesUrl = new URL(requestedUrls.find((url) => url.startsWith('/api/issues')) as string, 'http://localhost')
-    expect(issuesUrl.searchParams.get('projectIds')).toBe('200')
+    expect(callsTo('issues')[0].params.projectIds).toBe('200')
 
     expect((screen.getByLabelText('グルーピング') as unknown as HTMLSelectElement).value).toBe('project')
     expect(screen.getByRole('button', { name: '日' }).getAttribute('aria-pressed')).toBe('true')

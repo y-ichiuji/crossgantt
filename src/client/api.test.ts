@@ -1,26 +1,34 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { defaultFilter } from '../shared/filter'
+import { decodeState } from '../shared/oauth'
 import { NOW } from '../shared/test-fixtures'
 import type { IssuesQuery } from '../shared/types'
-import { ApiError, getIssues, getMembers, getProjects, getSession, getStatuses, logout, startLogin } from './api'
+import {
+  ApiError,
+  getIcons,
+  getIssues,
+  getMembers,
+  getProjects,
+  getSession,
+  getStatuses,
+  isServerAvailable,
+  logout,
+  startLogin
+} from './api'
+import { installBootstrap, installScriptRun, removeBootstrap } from './test-utils'
+import type { ScriptRunStub } from './test-utils'
 
-const originalFetch = globalThis.fetch
+let stub: ScriptRunStub | null = null
 
-type Call = { url: string; init: RequestInit | undefined }
-
-let calls: Call[]
-
-function stubFetch(responder: (url: string) => Response) {
-  globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
-    calls.push({ url, init })
-    return responder(url)
-  }) as typeof fetch
+function install(responder: Parameters<typeof installScriptRun>[0]) {
+  stub = installScriptRun(responder)
+  return stub
 }
 
-function json(body: unknown, status = 200): Response {
-  return Response.json(body, { status })
+/** 成功の応答を返す。 */
+function ok(data: unknown) {
+  return install(() => ({ ok: true as const, data }))
 }
 
 function baseQuery(overrides: Partial<IssuesQuery> = {}): IssuesQuery {
@@ -38,153 +46,154 @@ function baseQuery(overrides: Partial<IssuesQuery> = {}): IssuesQuery {
   }
 }
 
-beforeEach(() => {
-  calls = []
-})
-
 afterEach(() => {
-  globalThis.fetch = originalFetch
+  stub?.restore()
+  stub = null
+  removeBootstrap()
   vi.restoreAllMocks()
 })
 
-describe('リクエストの共通挙動', () => {
-  it('same-origin で Cookie を送る', async () => {
-    stubFetch(() => json({ id: 1, userId: null, name: 'x', space: 'example.backlog.jp' }))
-    await getSession()
-    expect(calls[0].init?.credentials).toBe('same-origin')
-  })
-
-  it('エラー時はサーバーのメッセージを ApiError にして投げる', async () => {
-    stubFetch(() => json({ error: 'ログインしていません' }, 401))
+describe('呼び出しの共通挙動', () => {
+  it('サーバーが無い環境では 503 を投げる', async () => {
     const thrown = (await getProjects(false).catch((error: unknown) => error)) as ApiError
 
     expect(thrown).toBeInstanceOf(ApiError)
+    expect(thrown.status).toBe(503)
+    expect(isServerAvailable()).toBe(false)
+  })
+
+  it('サーバーがあれば isServerAvailable が true になる', () => {
+    ok([])
+    expect(isServerAvailable()).toBe(true)
+  })
+
+  it('エラーの応答はサーバーのメッセージを ApiError にして投げる', async () => {
+    install(() => ({ ok: false as const, status: 401, error: 'ログインしていません', detail: null }))
+
+    const thrown = (await getProjects(false).catch((error: unknown) => error)) as ApiError
     expect(thrown.status).toBe(401)
     expect(thrown.message).toBe('ログインしていません')
     expect(thrown.isUnauthorized).toBe(true)
   })
 
   it('detail も保持する', async () => {
-    stubFetch(() => json({ error: 'まずい', detail: '詳細' }, 400))
+    install(() => ({ ok: false as const, status: 400, error: 'まずい', detail: '詳細' }))
+
     const thrown = (await getProjects(false).catch((error: unknown) => error)) as ApiError
     expect(thrown.detail).toBe('詳細')
     expect(thrown.isUnauthorized).toBe(false)
   })
 
-  it('JSON で無いエラー本文でもステータスから既定のメッセージを作る', async () => {
-    stubFetch(() => new Response('boom', { status: 500 }))
+  it('サーバー側の呼び出し自体が失敗したら 500 にする', async () => {
+    install(() => new Error('Script function not found'))
+
     const thrown = (await getProjects(false).catch((error: unknown) => error)) as ApiError
     expect(thrown.status).toBe(500)
-    expect(thrown.message).toContain('500')
+    expect(thrown.message).toBe('Script function not found')
   })
-})
 
-describe('getSession', () => {
-  it('接続ユーザーを返す', async () => {
-    stubFetch(() => json({ id: 42, userId: null, name: '山田太郎', space: 'example.backlog.jp' }))
-    const viewer = await getSession()
-
-    expect(viewer.name).toBe('山田太郎')
-    expect(calls[0].url).toBe('/api/auth/session')
-  })
-})
-
-describe('startLogin', () => {
-  // location を差し替えたまま返すと、以降のテストでは pathname と search しか
-  // 生えていない偽物が残り、history.replaceState も効かなくなる。
-  // vi.restoreAllMocks() では defineProperty を取り消せないため明示的に戻す。
-  const originalLocation = Object.getOwnPropertyDescriptor(window, 'location')
-  afterEach(() => {
-    if (originalLocation) {
-      Object.defineProperty(window, 'location', originalLocation)
+  it('解釈できない応答は 502 にする', async () => {
+    // 成功ハンドラに渡る文字列が JSON でない場合。
+    stub = installScriptRun(() => ({ ok: true as const, data: undefined }))
+    const carrier = window as unknown as {
+      google: { script: { run: { withSuccessHandler: (handler: (value: string) => void) => unknown } } }
     }
+    const original = carrier.google.script.run
+    carrier.google.script.run = {
+      withSuccessHandler: (handler) => ({
+        withFailureHandler: () => ({
+          apiCall: () => {
+            queueMicrotask(() => handler('not json'))
+          }
+        })
+      })
+    } as typeof original
+
+    const thrown = (await getProjects(false).catch((error: unknown) => error)) as ApiError
+    expect(thrown.status).toBe(502)
   })
 
-  it('スペースと戻り先を付けてログインへ遷移する', () => {
-    window.history.replaceState(null, '', '/?projects=1,2')
-    const assigned: string[] = []
-    // happy-dom では location.href への代入で遷移が起きるため、差し替えて記録する。
-    Object.defineProperty(window, 'location', {
-      configurable: true,
-      value: {
-        pathname: '/',
-        search: '?projects=1,2',
-        set href(value: string) {
-          assigned.push(value)
-        },
-        get href() {
-          return 'http://localhost/'
-        }
-      }
-    })
+  it('中断されたら AbortError を投げ、結果を捨てる', async () => {
+    ok([])
+    const controller = new AbortController()
+    const promise = getProjects(false, controller.signal)
+    controller.abort()
 
-    startLogin('example.backlog.jp')
+    const thrown = (await promise.catch((error: unknown) => error)) as DOMException
+    expect(thrown.name).toBe('AbortError')
+  })
 
-    const url = new URL(assigned[0], 'http://localhost')
-    expect(url.pathname).toBe('/api/auth/login')
-    expect(url.searchParams.get('space')).toBe('example.backlog.jp')
-    expect(url.searchParams.get('returnTo')).toBe('/?projects=1,2')
+  it('すでに中断済みなら呼び出さない', async () => {
+    const stubbed = ok([])
+    const controller = new AbortController()
+    controller.abort()
+
+    await expect(getProjects(false, controller.signal)).rejects.toThrow(DOMException)
+    expect(stubbed.calls).toHaveLength(0)
   })
 })
 
-describe('logout', () => {
-  it('POST で呼び出し、204 でも例外にならない', async () => {
-    stubFetch(() => new Response(null, { status: 204 }))
+describe('getSession / logout', () => {
+  it('接続ユーザーを返す', async () => {
+    const stubbed = ok({ id: 42, userId: null, name: '山田太郎', space: 'example.backlog.jp' })
+
+    const viewer = await getSession()
+    expect(viewer.name).toBe('山田太郎')
+    expect(stubbed.calls[0]).toEqual({ name: 'session', params: {} })
+  })
+
+  it('ログアウトは logout を呼ぶ', async () => {
+    const stubbed = ok(null)
+
     await expect(logout()).resolves.toBeUndefined()
-    expect(calls[0].url).toBe('/api/auth/logout')
-    expect(calls[0].init?.method).toBe('POST')
+    expect(stubbed.calls[0].name).toBe('logout')
   })
 })
 
-describe('getProjects', () => {
+describe('getProjects / getMembers / getStatuses', () => {
   it('refresh を付けない', async () => {
-    stubFetch(() => json([]))
+    const stubbed = ok([])
     await getProjects(false)
-    expect(calls[0].url).toBe('/api/projects')
+    expect(stubbed.calls[0]).toEqual({ name: 'projects', params: {} })
   })
 
   it('refresh=1 を付ける', async () => {
-    stubFetch(() => json([]))
+    const stubbed = ok([])
     await getProjects(true)
-    expect(calls[0].url).toBe('/api/projects?refresh=1')
+    expect(stubbed.calls[0].params).toEqual({ refresh: '1' })
   })
-})
 
-describe('getMembers / getStatuses', () => {
   it('プロジェクト ID をカンマ区切りで渡す', async () => {
-    stubFetch(() => json([]))
+    const stubbed = ok([])
     await getMembers([3, 1], false)
-    expect(new URL(calls[0].url, 'http://x').searchParams.get('projectIds')).toBe('3,1')
+    expect(stubbed.calls[0]).toEqual({ name: 'members', params: { projectIds: '3,1' } })
   })
 
   it('ステータスも同じ形式で渡す', async () => {
-    stubFetch(() => json([]))
+    const stubbed = ok([])
     await getStatuses([5], true)
-    const url = new URL(calls[0].url, 'http://x')
-    expect(url.pathname).toBe('/api/statuses')
-    expect(url.searchParams.get('projectIds')).toBe('5')
-    expect(url.searchParams.get('refresh')).toBe('1')
+    expect(stubbed.calls[0]).toEqual({ name: 'statuses', params: { projectIds: '5', refresh: '1' } })
   })
 })
 
 describe('getIssues', () => {
-  it('必須パラメータだけを送る', async () => {
-    stubFetch(() => json({ issues: [], truncated: false, requestCount: 0, fetchedAt: '' }))
-    await getIssues(baseQuery(), false)
+  const response = { issues: [], truncated: false, requestCount: 0, fetchedAt: '' }
 
-    const url = new URL(calls[0].url, 'http://x')
-    expect(url.pathname).toBe('/api/issues')
-    expect(url.searchParams.get('projectIds')).toBe('1,2')
-    expect(url.searchParams.has('assigneeIds')).toBe(false)
-    expect(url.searchParams.has('statuses')).toBe(false)
-    expect(url.searchParams.has('keyword')).toBe(false)
-    expect(url.searchParams.has('closed')).toBe(false)
-    expect(url.searchParams.has('nodate')).toBe(false)
-    expect(url.searchParams.has('refresh')).toBe(false)
+  it('必須パラメータだけを送る', async () => {
+    const stubbed = ok(response)
+    const query = baseQuery()
+
+    await getIssues(query, false)
+
+    expect(stubbed.calls[0]).toEqual({
+      name: 'issues',
+      params: { projectIds: '1,2', from: query.from, to: query.to }
+    })
   })
 
   it('指定された条件をすべて送る', async () => {
-    stubFetch(() => json({ issues: [], truncated: false, requestCount: 0, fetchedAt: '' }))
+    const stubbed = ok(response)
+
     await getIssues(
       baseQuery({
         assigneeIds: [10, 20],
@@ -196,18 +205,92 @@ describe('getIssues', () => {
       true
     )
 
-    const url = new URL(calls[0].url, 'http://x')
-    expect(url.searchParams.get('assigneeIds')).toBe('10,20')
-    expect(url.searchParams.get('statuses')).toBe('未対応,処理中')
-    expect(url.searchParams.get('keyword')).toBe('API')
-    expect(url.searchParams.get('closed')).toBe('1')
-    expect(url.searchParams.get('nodate')).toBe('1')
-    expect(url.searchParams.get('refresh')).toBe('1')
+    expect(stubbed.calls[0].params).toMatchObject({
+      assigneeIds: '10,20',
+      statuses: '未対応,処理中',
+      keyword: 'API',
+      closed: '1',
+      nodate: '1',
+      refresh: '1'
+    })
   })
 
   it('レスポンスをそのまま返す', async () => {
     const body = { issues: [], truncated: true, requestCount: 7, fetchedAt: '2026-09-10T00:00:00.000Z' }
-    stubFetch(() => json(body))
+    ok(body)
     expect(await getIssues(baseQuery(), false)).toEqual(body)
+  })
+})
+
+describe('getIcons', () => {
+  it('ID をカンマ区切りで渡す', async () => {
+    const stubbed = ok({ 10: 'data:image/png;base64,AAAA' })
+
+    expect(await getIcons([10, 20])).toEqual({ 10: 'data:image/png;base64,AAAA' })
+    expect(stubbed.calls[0]).toEqual({ name: 'icons', params: { userIds: '10,20' } })
+  })
+
+  it('ID が無ければ呼び出さない', async () => {
+    const stubbed = ok({})
+
+    expect(await getIcons([])).toEqual({})
+    expect(stubbed.calls).toHaveLength(0)
+  })
+})
+
+describe('startLogin', () => {
+  /** `target="_top"` のリンクをクリックして最上位フレームを遷移させる。 */
+  function captureNavigation(): HTMLAnchorElement[] {
+    const clicked: HTMLAnchorElement[] = []
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      clicked.push(this)
+    })
+    return clicked
+  }
+
+  it('認可画面へのリンクを最上位フレームで開く', () => {
+    const bootstrap = installBootstrap()
+    const clicked = captureNavigation()
+
+    startLogin('example.backlog.jp', 'projects=1,2&from=2026-09-01')
+
+    expect(clicked).toHaveLength(1)
+    expect(clicked[0].target).toBe('_top')
+
+    const url = new URL(clicked[0].href)
+    expect(url.origin).toBe('https://example.backlog.jp')
+    expect(url.pathname).toBe('/OAuth2AccessRequest.action')
+    expect(url.searchParams.get('client_id')).toBe('client-id')
+    expect(url.searchParams.get('redirect_uri')).toBe(bootstrap.redirectUri)
+    expect(decodeState(url.searchParams.get('state'))).toEqual({
+      nonce: bootstrap.nonce,
+      space: 'example.backlog.jp',
+      query: 'projects=1,2&from=2026-09-01'
+    })
+  })
+
+  it('リンクは後片付けする', () => {
+    installBootstrap()
+    captureNavigation()
+
+    startLogin('example.backlog.jp', '')
+
+    expect(document.querySelectorAll('a')).toHaveLength(0)
+  })
+
+  it('Backlog 以外のドメインは拒否する', () => {
+    installBootstrap()
+    const clicked = captureNavigation()
+
+    expect(() => startLogin('evil.example.com', '')).toThrow(ApiError)
+    expect(clicked).toHaveLength(0)
+  })
+
+  it('OAuth の設定が未完了なら拒否する', () => {
+    installBootstrap({ configured: false })
+    const clicked = captureNavigation()
+
+    expect(() => startLogin('example.backlog.jp', '')).toThrow(ApiError)
+    expect(clicked).toHaveLength(0)
   })
 })

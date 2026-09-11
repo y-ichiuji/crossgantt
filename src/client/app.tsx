@@ -24,6 +24,7 @@ import {
   logout,
   startLogin
 } from './api'
+import { buildShareUrl, loadBootstrap } from './bootstrap'
 import { FilterBar } from './components/FilterBar'
 import { GanttChart } from './components/GanttChart'
 import { LoginPanel } from './components/LoginPanel'
@@ -38,8 +39,8 @@ const KEYWORD_DEBOUNCE_MS = 400
 /** 「コピーしました」の表示を戻すまでの時間。 */
 const COPIED_FEEDBACK_MS = 1500
 
-/** 認可フローが失敗したときに URL へ付く理由コードの説明。 */
-const AUTH_ERROR_MESSAGES: Record<string, string> = {
+/** 認可フローが失敗したときにサーバーから渡される理由コードの説明。 */
+const AUTH_ERROR_MESSAGES: Record<string, string | undefined> = {
   missing_code: '認可コードを受け取れませんでした。もう一度ログインしてください。',
   state_mismatch: '認可リクエストの照合に失敗しました。もう一度ログインしてください。',
   state_expired: '認可の有効期限が切れました。もう一度ログインしてください。',
@@ -68,26 +69,6 @@ function parseIdsKey(key: string): number[] {
   return key === '' ? [] : key.split(',').map(Number)
 }
 
-/** 現在のパスに検索文字列を付けた、履歴へ積むための URL。 */
-function pathWithSearch(search: string): string {
-  return search === '' ? window.location.pathname : `${window.location.pathname}?${search}`
-}
-
-/** コールバックが付けた auth_error を読み取り、URL からは取り除く。 */
-function consumeAuthError(): string | null {
-  if (typeof window === 'undefined') {
-    return null
-  }
-  const params = new URLSearchParams(window.location.search)
-  const code = params.get('auth_error')
-  if (!code) {
-    return null
-  }
-  params.delete('auth_error')
-  window.history.replaceState(null, '', pathWithSearch(params.toString()))
-  return AUTH_ERROR_MESSAGES[code] ?? `ログインに失敗しました（${code}）`
-}
-
 export default function App() {
   const [viewer, setViewer] = useState<Viewer | null>(null)
   /** セッション確認が終わるまでは画面を確定させない。 */
@@ -96,9 +77,9 @@ export default function App() {
   const [authError, setAuthError] = useState<string | null>(null)
   const [showLoginPanel, setShowLoginPanel] = useState(false)
 
-  const [filter, setFilter] = useState<ViewFilter>(() =>
-    parseFilter(new URLSearchParams(typeof window === 'undefined' ? '' : window.location.search))
-  )
+  // 初期表示条件はサーバーが `doGet` で受け取ったクエリから復元する。
+  // サンドボックス iframe の中からは、利用者が開いた URL は見えない。
+  const [filter, setFilter] = useState<ViewFilter>(() => parseFilter(new URLSearchParams(loadBootstrap().query)))
   const [debouncedKeyword, setDebouncedKeyword] = useState(filter.keyword)
 
   const [projects, setProjects] = useState<ProjectSummary[]>([])
@@ -120,6 +101,13 @@ export default function App() {
   const autoSelectedRef = useRef(false)
 
   const today = useMemo(() => todayKey(), [])
+
+  /**
+   * 表示条件をクエリ文字列に畳んだもの。
+   *
+   * 共有 URL の組み立てと、認可後に表示条件を復元するための state に使う。
+   */
+  const filterQuery = useMemo(() => filterToParams(filter).toString(), [filter])
 
   const patchFilter = useCallback((patch: Partial<ViewFilter>) => {
     setFilter((prev) => {
@@ -169,23 +157,30 @@ export default function App() {
 
   // --- 認証 ---
 
-  // コールバックが付けた auth_error を読み取り、URL からは取り除く。
-  // history.replaceState は副作用なので、レンダー中（useState の初期化子）では実行しない。
-  // StrictMode は初期化子を二度呼ぶため、1 回目で URL から消えたパラメータを
-  // 2 回目が読めず、その戻り値が採用されてメッセージが表示されなくなる。
+  // 認可に失敗した場合の理由はサーバーから渡される。
   useEffect(() => {
-    const message = consumeAuthError()
-    if (message !== null) {
-      setAuthError(message)
+    const code = loadBootstrap().authError
+    if (code) {
+      setAuthError(AUTH_ERROR_MESSAGES[code] ?? `ログインに失敗しました（${code}）`)
     }
   }, [])
 
-  const handleLogin = useCallback((space: string) => {
-    setLoggingIn(true)
-    setAuthError(null)
-    saveLastSpace(space)
-    startLogin(space)
-  }, [])
+  const handleLogin = useCallback(
+    (space: string) => {
+      setAuthError(null)
+      saveLastSpace(space)
+      try {
+        setLoggingIn(true)
+        // 認可画面への遷移は最上位フレームを動かすため、クリックと同じ
+        // 同期処理の中で行う必要がある。
+        startLogin(space, filterQuery)
+      } catch (error: unknown) {
+        setLoggingIn(false)
+        setAuthError(toMessage(error))
+      }
+    },
+    [filterQuery]
+  )
 
   const handleLogout = useCallback(() => {
     const run = async () => {
@@ -397,15 +392,6 @@ export default function App() {
     return () => controller.abort()
   }, [viewer, query, reloadToken, reportError])
 
-  // --- URL 同期 ---
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return
-    }
-    window.history.replaceState(null, '', pathWithSearch(filterToParams(filter).toString()))
-  }, [filter])
-
   const handleReload = useCallback(() => {
     bypassCacheRef.current = true
     setReloadToken((value) => value + 1)
@@ -414,7 +400,7 @@ export default function App() {
   const handleCopyUrl = useCallback(() => {
     const run = async () => {
       try {
-        await navigator.clipboard.writeText(window.location.href)
+        await navigator.clipboard.writeText(buildShareUrl(filterQuery))
         setCopied(true)
         setTimeout(() => setCopied(false), COPIED_FEEDBACK_MS)
       } catch {
@@ -422,7 +408,7 @@ export default function App() {
       }
     }
     void run()
-  }, [])
+  }, [filterQuery])
 
   const projectNames = useMemo(() => {
     const map: Record<number, string> = {}

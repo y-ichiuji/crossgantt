@@ -12,21 +12,34 @@
  */
 
 import type { Holiday } from '../shared/types'
-import { hashKey, withJsonCache } from './cache'
+import type { JsonCache } from './cache'
+import type { Fetcher } from './fetcher'
 
 const API_URL = 'https://holidays-jp.github.io/api/v1/date.json'
 
-/** 祝日は年に一度しか変わらないため、長めに持つ。 */
-const TTL_SECONDS = 24 * 60 * 60
+/**
+ * キャッシュの保持秒数。
+ *
+ * 祝日は年に一度しか変わらないためもっと長く持ちたいが、CacheService の
+ * 上限が 6 時間なのでそれに合わせる。
+ */
+const TTL_SECONDS = 6 * 60 * 60
 
 /**
- * Worker のアイソレート内で使い回す一時キャッシュ。
+ * 同一実行内で使い回す一時キャッシュ。
  *
- * Cache API は workers.dev のサブドメインでは働かないため、それだけに
- * 頼ると毎リクエスト外部へ出てしまう。アイソレートが生きているあいだは
- * ここで受け止める。
+ * 1 回の実行で複数回引かれても、外部へ出るのは 1 度で済ませる。
  */
 let memo: { fetchedAt: number; holidays: Record<string, string> } | null = null
+
+export type HolidaySource = {
+  fetcher: Fetcher
+  /** 利用者に依存しない情報なので、スクリプト共通のキャッシュを渡す。 */
+  cache: JsonCache
+  now: number
+  /** 呼び出しごとに状態を持ち越さないテスト用。 */
+  skipMemo?: boolean
+}
 
 /** 応答が `{"2026-01-01": "元日"}` の形をしているかを確かめる。 */
 function parseResponse(value: unknown): Record<string, string> | null {
@@ -43,41 +56,30 @@ function parseResponse(value: unknown): Record<string, string> | null {
   return Object.keys(result).length > 0 ? result : null
 }
 
-async function fetchFromApi(fetchImpl: typeof fetch): Promise<Record<string, string> | null> {
+function fetchFromApi(fetcher: Fetcher): Record<string, string> | null {
   try {
-    const response = await fetchImpl(API_URL, { headers: { Accept: 'application/json' } })
-    if (!response.ok) {
+    const [response] = fetcher([{ url: API_URL, headers: { Accept: 'application/json' } }])
+    if (response.status < 200 || response.status >= 300) {
       return null
     }
-    return parseResponse(await response.json())
+    return parseResponse(JSON.parse(response.text()))
   } catch {
     // 外部サービスが落ちていても、この画面は祝日なしで成立する。
     return null
   }
 }
 
-export type HolidaySourceOptions = {
-  fetchImpl?: typeof fetch
-  now?: number
-  /** 呼び出しごとに状態を持ち越さないテスト用。 */
-  skipMemo?: boolean
-}
-
 /** holidays-jp から取得した祝日。取れなければ null。 */
-async function loadFromApi(options: HolidaySourceOptions): Promise<Record<string, string> | null> {
-  const fetchImpl = options.fetchImpl ?? fetch.bind(globalThis)
-  const now = options.now ?? Date.now()
-
-  if (!options.skipMemo && memo && now - memo.fetchedAt < TTL_SECONDS * 1000) {
+function loadFromApi(source: HolidaySource): Record<string, string> | null {
+  if (!source.skipMemo && memo && source.now - memo.fetchedAt < TTL_SECONDS * 1000) {
     return memo.holidays
   }
 
-  const key = await hashKey('holidays', API_URL)
-  const holidays = await withJsonCache<Record<string, string> | null>('holidays', [key], TTL_SECONDS, false, async () =>
-    fetchFromApi(fetchImpl)
+  const holidays = source.cache.withJson<Record<string, string> | null>('holidays', [API_URL], TTL_SECONDS, false, () =>
+    fetchFromApi(source.fetcher)
   )
-  if (holidays && !options.skipMemo) {
-    memo = { fetchedAt: now, holidays }
+  if (holidays && !source.skipMemo) {
+    memo = { fetchedAt: source.now, holidays }
   }
   return holidays
 }
@@ -87,8 +89,8 @@ async function loadFromApi(options: HolidaySourceOptions): Promise<Record<string
  *
  * holidays-jp が持っていない年（3 年より先など）は、その期間だけ何も返らない。
  */
-export async function fetchHolidays(from: string, to: string, options: HolidaySourceOptions = {}): Promise<Holiday[]> {
-  const api = await loadFromApi(options)
+export function fetchHolidays(from: string, to: string, source: HolidaySource): Holiday[] {
+  const api = loadFromApi(source)
   if (!api) {
     return []
   }
@@ -98,7 +100,7 @@ export async function fetchHolidays(from: string, to: string, options: HolidaySo
     .toSorted((a, b) => (a.dateKey < b.dateKey ? -1 : 1))
 }
 
-/** テスト用にアイソレート内キャッシュを捨てる。 */
+/** テスト用に実行内キャッシュを捨てる。 */
 export function resetHolidayMemo(): void {
   memo = null
 }

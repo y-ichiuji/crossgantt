@@ -96,13 +96,12 @@ jobs:
           echo 'proceed=true' >> "$GITHUB_OUTPUT"
 
   deploy:
-    name: Cloudflare Workers へデプロイ
+    name: Google Apps Script へデプロイ
     needs: gate
     if: needs.gate.outputs.proceed == 'true'
     runs-on: ubuntu-latest
     environment:
       name: production
-      url: https://crossgantt.y-ichiuji.workers.dev
     steps:
       # gate で 40 桁の 16 進であることを検証済みのコミットを取り出す。
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -123,29 +122,40 @@ jobs:
       # ここではビルドとデプロイだけを行う。
       - run: pnpm run build
 
-      # wrangler の汎用エラーより先に、何が足りないかを明示する。
+      - name: 成果物の検査
+        run: pnpm run smoke
+
+      # clasp の汎用エラーより先に、何が足りないかを明示する。
       - name: シークレットの確認
         env:
-          API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CREDENTIALS: ${{ secrets.CLASP_CREDENTIALS }}
+          SCRIPT_ID: ${{ secrets.GAS_SCRIPT_ID }}
+          DEPLOYMENT_ID: ${{ secrets.GAS_DEPLOYMENT_ID }}
         run: |
           missing=''
-          [ -n "$API_TOKEN" ] || missing="$missing CLOUDFLARE_API_TOKEN"
-          [ -n "$ACCOUNT_ID" ] || missing="$missing CLOUDFLARE_ACCOUNT_ID"
+          [ -n "$CREDENTIALS" ] || missing="$missing CLASP_CREDENTIALS"
+          [ -n "$SCRIPT_ID" ] || missing="$missing GAS_SCRIPT_ID"
+          [ -n "$DEPLOYMENT_ID" ] || missing="$missing GAS_DEPLOYMENT_ID"
           if [ -n "$missing" ]; then
             echo "::error::リポジトリシークレットが未設定です:$missing（設定方法は README の CI / CD を参照）"
             exit 1
           fi
 
-      - name: デプロイ
-        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          packageManager: pnpm
-          # ビルド済みの成果物をそのまま上げる。
-          command: deploy
+      # clasp はホームディレクトリの .clasprc.json から認証情報を読む。
+      # 実行後に必ず消すため、後片付けは always() 付きの別ステップに置く。
+      - name: clasp の認証情報を用意
+        env:
+          CREDENTIALS: ${{ secrets.CLASP_CREDENTIALS }}
+        run: |
+          printf '%s' "$CREDENTIALS" > "$HOME/.clasprc.json"
+          chmod 600 "$HOME/.clasprc.json"
 
-      # 公開直後に、ログイン前でも確認できる範囲を検証する。
-      - name: 公開後のスモークテスト
-        run: node scripts/smoke.mjs https://crossgantt.y-ichiuji.workers.dev
+      - name: デプロイ
+        env:
+          GAS_SCRIPT_ID: ${{ secrets.GAS_SCRIPT_ID }}
+          GAS_DEPLOYMENT_ID: ${{ secrets.GAS_DEPLOYMENT_ID }}
+        run: node scripts/deploy-gas.mjs
+
+      - name: 認証情報を削除
+        if: always()
+        run: rm -f "$HOME/.clasprc.json"

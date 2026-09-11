@@ -1,5 +1,6 @@
 # prod
 dist/
+gas-dist/
 
 # dev
 .yarn/
@@ -13,12 +14,14 @@ dist/
 
 # deps
 node_modules/
-.wrangler
 
 # env
 .env
 .env.production
-.dev.vars
+
+# clasp（スクリプト ID と認証情報。どちらも共有しない）
+.clasp.json
+.clasprc.json
 
 # logs
 logs/
@@ -35,7 +38,7 @@ lerna-debug.log*
 # local agent settings
 .claude/settings.local.json
 
-# skills are installed by postinstall (scripts/setup-skills.mjs), not committed
+# agent skills are fetched locally, not committed
 .agents/
 .claude/skills/
 skills-lock.json

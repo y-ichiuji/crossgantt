@@ -66,8 +66,7 @@ export function LoginPanel({ initialSpace, onSubmit, onCancel, submitting, error
             読み取り専用で表示します。このアプリが Backlog を更新することはありません。
           </p>
           <p>
-            アクセストークンはサーバー側のセッションにのみ保存され、ブラウザには HttpOnly Cookie のセッション ID
-            だけが渡ります。
+            アクセストークンは Google アカウントごとに分かれたサーバー側の領域にのみ保存され、ブラウザには渡りません。
           </p>
         </div>
       </form>

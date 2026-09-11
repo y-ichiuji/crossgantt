@@ -1,3 +1,5 @@
+import { useAssigneeIcon } from '../icons'
+
 import styles from './AssigneeAvatar.module.css'
 
 /**
@@ -20,22 +22,21 @@ type Props = {
 /**
  * 担当者のアイコン。
  *
- * Backlog のアイコン取得はアクセストークンを要するため、Worker の
- * `/api/users/:id/icon` を経由して読み込む。画像が読めなかった場合は
- * 背後に置いた頭文字がそのまま見える。
+ * Backlog のアイコン取得はアクセストークンを要するため、サーバーが
+ * data URL に変換したものを受け取って表示する。取得できるまで、
+ * また取得できなかった場合は、背後に置いた頭文字がそのまま見える。
  */
 export function AssigneeAvatar({ assigneeId, assigneeName, size = 'sm' }: Props) {
   const label = assigneeName ?? '未割り当て'
   const initial = firstGrapheme(label)
+  const iconUrl = useAssigneeIcon(assigneeId)
 
   return (
     <span className={styles.avatar} data-size={size} title={label}>
       <span className={styles.initial} aria-hidden="true">
         {initial}
       </span>
-      {assigneeId === null ? null : (
-        <img className={styles.image} src={`/api/users/${assigneeId}/icon`} alt="" loading="lazy" decoding="async" />
-      )}
+      {iconUrl === null ? null : <img className={styles.image} src={iconUrl} alt="" loading="lazy" decoding="async" />}
     </span>
   )
 }

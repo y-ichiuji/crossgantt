@@ -113,3 +113,36 @@ export type ApiErrorBody = {
   error: string
   detail?: string
 }
+
+/**
+ * API 呼び出し 1 回の結果。
+ *
+ * `google.script.run` の失敗ハンドラに渡る例外はメッセージが加工され、
+ * 状態コードのような付加情報も落ちる。そのため成否はこの形で包んで返す。
+ */
+export type ApiEnvelope =
+  | { ok: true; data: unknown }
+  | { ok: false; status: number; error: string; detail: string | null }
+
+/**
+ * 画面の起動時にサーバーから渡す設定。
+ *
+ * Apps Script の Web アプリはサンドボックス iframe の中で動くため、
+ * 表示中の URL からは何も読み取れない。初期表示条件も共有用の URL も
+ * ここでサーバーから受け取る。
+ */
+export type Bootstrap = {
+  /** 共有用に使う Web アプリの URL（/exec）。取得できない場合は空文字。 */
+  webAppUrl: string
+  /** 初期表示条件のクエリ文字列（`?` は含まない）。 */
+  query: string
+  /** OAuth のクライアント ID とシークレットが設定済みかどうか。 */
+  configured: boolean
+  clientId: string
+  /** Backlog に登録したリダイレクト URI。 */
+  redirectUri: string
+  /** 認可リクエストの state に載せる、払い出し済みの nonce。 */
+  nonce: string
+  /** 直前の認可が失敗した場合の理由コード。 */
+  authError: string | null
+}

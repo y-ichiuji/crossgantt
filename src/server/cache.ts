@@ -1,9 +1,11 @@
 /**
- * Cloudflare Cache API を使った短時間キャッシュ。
+ * Apps Script の CacheService を使った短時間キャッシュ。
  *
  * Backlog の Search 区分レート制限を守るため、同一条件のリクエストは
- * 短時間だけキャッシュして再取得を避ける。キャッシュキーには API キーの
- * ハッシュを含め、別ユーザーのレスポンスが混ざらないようにする。
+ * 短時間だけキャッシュして再取得を避ける。
+ *
+ * CacheService は 1 キーあたり 100KB 程度までしか保持できないため、
+ * 大きな JSON は分割して複数キーへ書き込み、本体のキーには断片数だけを置く。
  */
 
 /**
@@ -17,108 +19,149 @@
  */
 const KEY_SEPARATOR = '\0'
 
-/** 内部的なキャッシュキー用のダミーオリジン。実際にリクエストは発生しない。 */
-const CACHE_ORIGIN = 'https://cache.crossgantt.internal'
-
-/** 文字列群を SHA-256 でハッシュ化して 16 進文字列にする。 */
-export async function hashKey(...parts: string[]): Promise<string> {
-  const encoder = new TextEncoder()
-  const digest = await crypto.subtle.digest('SHA-256', encoder.encode(parts.join(KEY_SEPARATOR)))
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
-}
-
-type CacheStorageWithDefault = CacheStorage & { default?: Cache }
-
-/** キャッシュキーとして使うダミーの Request。 */
-function cacheRequest(namespace: string, hash: string): Request {
-  return new Request(`${CACHE_ORIGIN}/${namespace}/${hash}`)
-}
-
-/** Workers 以外の実行環境（テストなど）ではキャッシュを使わない。 */
-function getCache(): Cache | null {
-  const store = (globalThis as { caches?: CacheStorageWithDefault }).caches
-  return store?.default ?? null
-}
+/**
+ * 1 つの断片に入れる最大文字数。
+ *
+ * CacheService の上限はバイト数で効くため、日本語（UTF-8 で 1 文字 3 バイト）
+ * だけが並んでも 100KB を超えないところに取っている。
+ */
+const CHUNK_LENGTH = 30_000
 
 /**
- * 呼び出し元が利用者へ返したい Cache-Control を退避しておくヘッダー。
+ * 1 つの値に許す断片数の上限。
  *
- * Worker 内キャッシュの寿命（`max-age=<ttl>`）と、ブラウザや経路上の
- * キャッシュへ与える指示は別物である。両者を同じヘッダーで表すと、
- * 保存時に上書きした値がそのまま利用者へ返ってしまい、`private` のような
- * 「共有キャッシュに載せるな」という指示が消える。退避して復元する。
+ * これを超える巨大な応答はキャッシュを諦める。キャッシュ全体の容量を
+ * 一度の取得で使い切ってしまうと、他の条件のキャッシュまで押し出してしまう。
+ *
+ * プロジェクトを数十個選ぶと課題の応答は数千件になる。そこでキャッシュを
+ * 諦めると、絞り込みを変えるたびに取り直してレート制限へ届いてしまうため、
+ * 3,000 件程度までは収まる上限にしている。
  */
-const CLIENT_CACHE_CONTROL_HEADER = 'x-cg-client-cache-control'
+const MAX_CHUNKS = 40
 
-/** 任意のレスポンスをキャッシュから取り出す。無ければ null。 */
-export async function matchCachedResponse(key: string): Promise<Response | null> {
-  const cache = getCache()
-  if (!cache) {
-    return null
-  }
-  const hit = await cache.match(cacheRequest('raw', key))
-  if (!hit) {
-    return null
-  }
-  const clientCacheControl = hit.headers.get(CLIENT_CACHE_CONTROL_HEADER)
-  if (clientCacheControl === null) {
-    return hit
-  }
-  // 保存時に退避した、利用者向けの Cache-Control を復元して返す。
-  const headers = new Headers(hit.headers)
-  headers.delete(CLIENT_CACHE_CONTROL_HEADER)
-  headers.set('Cache-Control', clientCacheControl)
-  return new Response(hit.body, { headers })
+/** キャッシュの読み書き。Apps Script では CacheService の Cache に対応する。 */
+export type CacheStore = {
+  get: (key: string) => string | null
+  getAll: (keys: string[]) => Record<string, string | undefined>
+  putAll: (values: Record<string, string>, ttlSeconds: number) => void
 }
 
-/** 任意のレスポンスをキャッシュへ入れる。利用者向けの Cache-Control は保持する。 */
-export async function putCachedResponse(key: string, response: Response, ttlSeconds: number): Promise<void> {
-  const cache = getCache()
-  if (!cache) {
-    return
-  }
-  const headers = new Headers(response.headers)
-  const clientCacheControl = headers.get('Cache-Control')
-  if (clientCacheControl !== null) {
-    headers.set(CLIENT_CACHE_CONTROL_HEADER, clientCacheControl)
-  }
-  headers.set('Cache-Control', `max-age=${ttlSeconds}`)
-  await cache.put(cacheRequest('raw', key), new Response(response.body, { headers }))
+/** 文字列を固定長の文字列へ畳む関数。Apps Script では SHA-256 を使う。 */
+export type Hasher = (input: string) => string
+
+/** 断片数を記録する本体の値。 */
+type Manifest = { chunks: number }
+
+function isManifest(value: unknown): value is Manifest {
+  return typeof value === 'object' && value !== null && typeof (value as Manifest).chunks === 'number'
 }
 
-/**
- * JSON を返す処理をキャッシュ付きで実行する。
- *
- * @param namespace キャッシュの用途を表す名前
- * @param keyParts キャッシュキーを構成する要素（API キーのハッシュを必ず含めること）
- * @param ttlSeconds キャッシュの有効秒数
- * @param bypass true なら既存のキャッシュを無視して再取得する
- */
-export async function withJsonCache<T>(
-  namespace: string,
-  keyParts: string[],
-  ttlSeconds: number,
-  bypass: boolean,
-  produce: () => Promise<T>
-): Promise<T> {
-  const cache = getCache()
-  if (!cache) {
-    return produce()
+function splitChunks(text: string): string[] {
+  const chunks: string[] = []
+  for (let index = 0; index < text.length; index += CHUNK_LENGTH) {
+    chunks.push(text.slice(index, index + CHUNK_LENGTH))
+  }
+  return chunks
+}
+
+export type JsonCache = {
+  /** キャッシュキーに使う、要素をまとめたハッシュ。 */
+  hashKey: (...parts: string[]) => string
+  /** 文字列をそのまま読む。画像の Base64 のように JSON でない値に使う。 */
+  readText: (namespace: string, keyParts: string[]) => string | null
+  /** 文字列をそのまま書く。 */
+  writeText: (namespace: string, keyParts: string[], value: string, ttlSeconds: number) => void
+  /**
+   * JSON を返す処理をキャッシュ付きで実行する。
+   *
+   * @param namespace キャッシュの用途を表す名前
+   * @param keyParts キャッシュキーを構成する要素
+   * @param ttlSeconds キャッシュの有効秒数
+   * @param bypass true なら既存のキャッシュを無視して取り直す
+   */
+  withJson: <T>(namespace: string, keyParts: string[], ttlSeconds: number, bypass: boolean, produce: () => T) => T
+}
+
+/** キャッシュを持たない実装。テストや CacheService が使えない場面で使う。 */
+export function createNullJsonCache(hash: Hasher = (input) => input): JsonCache {
+  return {
+    hashKey: (...parts) => hash(parts.join(KEY_SEPARATOR)),
+    readText: () => null,
+    writeText: () => {
+      // 保持しない。
+    },
+    withJson: (_namespace, _keyParts, _ttlSeconds, _bypass, produce) => produce()
+  }
+}
+
+/** CacheStore の上に JSON の読み書きを組み立てる。 */
+export function createJsonCache(store: CacheStore, hash: Hasher): JsonCache {
+  const hashKey = (...parts: string[]): string => hash(parts.join(KEY_SEPARATOR))
+
+  const entryKey = (namespace: string, keyParts: string[]): string => `${namespace}:${hashKey(namespace, ...keyParts)}`
+
+  const readRaw = (key: string): string | null => {
+    const head = store.get(key)
+    if (head === null) {
+      return null
+    }
+    let manifest: unknown
+    try {
+      manifest = JSON.parse(head)
+    } catch {
+      return null
+    }
+    if (!isManifest(manifest) || manifest.chunks < 1 || manifest.chunks > MAX_CHUNKS) {
+      return null
+    }
+    const chunkKeys = Array.from({ length: manifest.chunks }, (_, index) => `${key}#${index}`)
+    const chunks = store.getAll(chunkKeys)
+    const parts: string[] = []
+    for (const chunkKey of chunkKeys) {
+      const chunk = chunks[chunkKey]
+      // 断片ごとに期限が来るため、一部だけ落ちていることがある。
+      // 途中が欠けた値は復元できないので、まるごと取り直す。
+      if (chunk === undefined) {
+        return null
+      }
+      parts.push(chunk)
+    }
+    return parts.join('')
   }
 
-  const cacheKey = cacheRequest(namespace, await hashKey(namespace, ...keyParts))
+  const writeRaw = (key: string, text: string, ttlSeconds: number): void => {
+    const chunks = splitChunks(text)
+    if (chunks.length > MAX_CHUNKS) {
+      return
+    }
+    const values: Record<string, string> = { [key]: JSON.stringify({ chunks: chunks.length }) }
+    for (const [index, chunk] of chunks.entries()) {
+      values[`${key}#${index}`] = chunk
+    }
+    store.putAll(values, ttlSeconds)
+  }
 
-  if (!bypass) {
-    const hit = await cache.match(cacheKey)
-    if (hit) {
-      return (await hit.json()) as T
+  return {
+    hashKey,
+    readText: (namespace, keyParts) => readRaw(entryKey(namespace, keyParts)),
+    writeText: (namespace, keyParts, value, ttlSeconds) => {
+      writeRaw(entryKey(namespace, keyParts), value, ttlSeconds)
+    },
+    withJson: <T>(namespace: string, keyParts: string[], ttlSeconds: number, bypass: boolean, produce: () => T): T => {
+      const key = entryKey(namespace, keyParts)
+      if (!bypass) {
+        const raw = readRaw(key)
+        if (raw !== null) {
+          try {
+            return JSON.parse(raw) as T
+          } catch {
+            // 壊れた値は無視して取り直す。
+          }
+        }
+      }
+      const value = produce()
+      writeRaw(key, JSON.stringify(value), ttlSeconds)
+      return value
     }
   }
-
-  const value = await produce()
-  const response = Response.json(value, {
-    headers: { 'Cache-Control': `max-age=${ttlSeconds}` }
-  })
-  await cache.put(cacheKey, response)
-  return value
 }
