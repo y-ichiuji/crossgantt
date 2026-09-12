@@ -48,10 +48,18 @@ describe('SummaryBar', () => {
   })
 
   it('取得時刻とリクエスト数を表示する', () => {
-    const date = new Date(2026, 8, 10, 15, 4)
-    setup({ fetchedAt: date.toISOString() })
+    // 取得時刻はサーバーが UTC で作る。画面の日付はすべて JST で組み立てて
+    // いるので、時刻だけ見る人のタイムゾーンに揃えると「今日」の列と食い違う。
+    // 06:04 UTC = 15:04 JST。
+    setup({ fetchedAt: '2026-09-10T06:04:00.000Z' })
     expect(screen.getByText(/15:04 時点/u)).toBeDefined()
     expect(screen.getByText(/Backlog API 30 リクエスト/u)).toBeDefined()
+  })
+
+  it('見る人のタイムゾーンによらず JST で出す', () => {
+    // 日付をまたぐ時刻で確かめる。15:04 UTC は JST では翌日の 00:04。
+    setup({ fetchedAt: '2026-09-10T15:04:00.000Z' })
+    expect(screen.getByText(/00:04 時点/u)).toBeDefined()
   })
 
   it('取得時刻が無ければ何も出さない', () => {

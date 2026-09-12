@@ -100,15 +100,32 @@ export function MultiSelect({ label, options, selected, onChange, emptyLabel, di
 
   const selectedSet = useMemo(() => new Set(selected), [selected])
 
+  /**
+   * 並べ替えの基準にする選択状態。
+   *
+   * いま選んでいるものをそのまま使うと、1 つ選ぶたびに一覧が並び替わる。
+   * 見ている行がカーソルの下で入れ替わり、Enter を続けて押しても直前の
+   * 操作を取り消せない（別の候補が対象になる）。基準はパネルを開いた
+   * 時点と絞り込みを変えた時点だけで取り直す。
+   */
+  const [order, setOrder] = useState({ open, query, basis: selectedSet })
+  if (order.open !== open || order.query !== query) {
+    setOrder({ open, query, basis: selectedSet })
+  }
+
   const visibleOptions = useMemo(() => {
     const keyword = query.trim().toLowerCase()
     const matched = keyword ? options.filter((option) => option.label.toLowerCase().includes(keyword)) : options
-    return selectedFirst(matched, selectedSet)
-  }, [options, query, selectedSet])
+    return selectedFirst(matched, order.basis)
+  }, [options, query, order.basis])
 
   const toggle = (value: string) => onChange(toggleValue(options, selectedSet, value))
 
-  /** Enter の対象は一覧の先頭。選択済みを上へ寄せた後の先頭であることに注意。 */
+  /**
+   * Enter の対象は一覧の先頭。
+   *
+   * 並びは選択を変えても動かないため、もう一度押せば同じ候補を外せる。
+   */
   const toggleFirstVisible = () => {
     const first = visibleOptions.at(0)
     if (first) {

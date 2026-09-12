@@ -54,4 +54,27 @@ describe('IndexedDB が使えない場合', () => {
     resetFilterStore()
     await expect(saveFilterQuery(SPACE, 'projects=100')).resolves.toBeUndefined()
   })
+
+  it('indexedDB の参照そのものが例外でも Promise を拒否しない', async () => {
+    // ストレージが遮断された文脈では、`window.indexedDB` への参照自体が
+    // SecurityError を投げる。拒否のまま返すと、表示条件の復元が終わらず
+    // 保存機能が黙って止まる。
+    const original = Object.getOwnPropertyDescriptor(window, 'indexedDB')
+    Object.defineProperty(window, 'indexedDB', {
+      configurable: true,
+      get() {
+        throw new DOMException('Access is denied for this document.', 'SecurityError')
+      }
+    })
+    resetFilterStore()
+    try {
+      await expect(loadFilterQuery(SPACE)).resolves.toBeNull()
+      await expect(saveFilterQuery(SPACE, 'projects=100')).resolves.toBeUndefined()
+    } finally {
+      if (original) {
+        Object.defineProperty(window, 'indexedDB', original)
+      }
+      resetFilterStore()
+    }
+  })
 })

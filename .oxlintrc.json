@@ -354,8 +354,38 @@
   },
   "overrides": [
     {
+      // サーバーと共有層はブラウザではなく Apps Script の V8 で動く。
+      // 設定全体では browser 環境を有効にしているため、ここで明示的に
+      // 禁じておかないと、存在しないグローバルを使っても何も言われない。
+      // `pnpm smoke` は tree-shaking 後の Code.js しか見られないので、
+      // サーバーがまだ import していない共有層のコードは検査できない。
+      "files": ["src/server/**/*.ts", "src/shared/**/*.ts"],
+      "rules": {
+        "no-restricted-globals": [
+          "error",
+          { "name": "fetch", "message": "Apps Script には無い。src/server/gas/runtime.ts の Fetcher を使う" },
+          { "name": "URL", "message": "Apps Script には無い。src/server/fetcher.ts の buildUrl を使う" },
+          { "name": "URLSearchParams", "message": "Apps Script には無い。encodeURIComponent で組み立てる" },
+          { "name": "setTimeout", "message": "Apps Script には無い。Utilities.sleep を使う" },
+          { "name": "setInterval", "message": "Apps Script には無い" },
+          { "name": "crypto", "message": "Apps Script には無い。Utilities.computeDigest を使う" },
+          { "name": "TextEncoder", "message": "Apps Script には無い。Utilities.newBlob を使う" },
+          { "name": "TextDecoder", "message": "Apps Script には無い。Utilities.newBlob を使う" },
+          { "name": "localStorage", "message": "ブラウザ専用。PropertiesService を使う" },
+          { "name": "sessionStorage", "message": "ブラウザ専用" },
+          { "name": "indexedDB", "message": "ブラウザ専用" },
+          { "name": "document", "message": "ブラウザ専用。HtmlService を使う" },
+          { "name": "window", "message": "ブラウザ専用" },
+          { "name": "navigator", "message": "ブラウザ専用" }
+        ]
+      }
+    },
+    {
       "files": ["**/*.test.ts", "**/*.test.tsx", "**/test-utils.ts"],
       "rules": {
+        // テストは Node と jsdom の上で動く。組み立てた URL を `new URL()` で
+        // 検証するような使い方は、本番のコードに載らないため妨げない。
+        "no-restricted-globals": "off",
         "typescript/no-unsafe-assignment": "off",
         "typescript/no-unsafe-argument": "off",
         "typescript/no-unsafe-member-access": "off",

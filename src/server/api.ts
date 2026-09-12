@@ -13,6 +13,7 @@
 
 import { diffDays, isDateKey } from '../shared/date'
 import { MAX_RANGE_DAYS, parseBool, parseIdList, parseNameList } from '../shared/filter'
+import { MAX_ICONS_PER_CALL } from '../shared/icons'
 import type {
   ApiEnvelope,
   Holiday,
@@ -27,7 +28,7 @@ import type { OAuthConfig } from './auth/oauth'
 import { clearSession, readSession, writeSession } from './auth/session'
 import type { SessionRecord, UserStore } from './auth/session'
 import type { BacklogStatus, BacklogUser } from './backlog/api-types'
-import { BacklogApiError, BacklogClient, DEFAULT_BATCH_SIZE } from './backlog/client'
+import { BacklogApiError, BacklogClient } from './backlog/client'
 import { fetchGanttIssues } from './backlog/issues'
 import {
   fetchProjectMembers,
@@ -63,8 +64,22 @@ const ISSUES_TTL = 3 * 60
  */
 const ICON_TTL = 6 * 60 * 60
 
-/** 1 回の呼び出しで取りに行くアイコンの上限。 */
-const MAX_ICONS_PER_CALL = 60
+/**
+ * アイコンを取得できなかったことを覚えておく秒数。
+ *
+ * 退会済みユーザーのアイコンは 404 になり続けるため、覚えずにいると
+ * 画面を開くたびに同じ失敗へリクエストを使う。一方でアイコンが後から
+ * 設定されることもあるので、成功時より短くしておく。
+ */
+const ICON_MISSING_TTL = 30 * 60
+
+/**
+ * アイコンが無いことを表すキャッシュ上の目印。
+ *
+ * 実際のアイコンは `data:` で始まる文字列なので取り違えない。空文字列は
+ * 断片が 0 個の値となり、読み出し時に「未保存」と区別できないため使わない。
+ */
+const ICON_UNAVAILABLE = '-'
 
 /**
  * API ハンドラが受け取るパラメータ。
@@ -131,10 +146,16 @@ function renewAccessToken(ctx: ApiContext, session: SessionRecord): string {
       )
       return tokens.accessToken
     } catch (error: unknown) {
-      if (error instanceof OAuthError) {
+      if (error instanceof OAuthError && error.status === 401) {
         // リフレッシュトークンまで失効している。作り直すしかない。
         clearSession(ctx.store)
         throw unauthorized('認証の更新に失敗しました。ログインし直してください')
+      }
+      if (error instanceof OAuthError) {
+        // 接続できなかった・応答を解釈できなかった、という一時的な失敗。
+        // ここでセッションを捨てると、まだ有効なリフレッシュトークンを
+        // 巻き添えにして再ログインを強いることになる。
+        throw new ApiFailure(503, '認証の更新に失敗しました。少し待ってからやり直してください', error.message)
       }
       throw error
     }
@@ -177,7 +198,8 @@ function cachedProjects(ctx: ApiContext, authed: Authed, bypass: boolean): Proje
  * 取りに行けば済む。プロジェクトを数十個選ぶ使い方では、この差が
  * そのままレート制限への当たりになる。
  *
- * @param fetchMissing キャッシュに無いプロジェクトだけを渡される。返り値は引数と同じ並び。
+ * @param fetchMissing キャッシュに無いプロジェクトだけを渡される。返り値は引数と
+ *   同じ並びで、取得できなかったプロジェクトは null。
  */
 function cachedPerProject<T>(
   ctx: ApiContext,
@@ -185,7 +207,7 @@ function cachedPerProject<T>(
   scope: string,
   projectIds: number[],
   bypass: boolean,
-  fetchMissing: (ids: number[]) => T[][]
+  fetchMissing: (ids: number[]) => (T[] | null)[]
 ): T[][] {
   const found = new Map<number, T[]>()
   const missing: number[] = []
@@ -206,6 +228,11 @@ function cachedPerProject<T>(
   if (missing.length > 0) {
     for (const [index, list] of fetchMissing(missing).entries()) {
       const projectId = missing[index]
+      if (list === null) {
+        // 取得できなかったプロジェクト。空の結果をキャッシュすると、
+        // 権限が戻った後も 30 分は空のまま配ることになる。
+        continue
+      }
       found.set(projectId, list)
       ctx.cache.writeText(namespace, [scope, String(projectId)], JSON.stringify(list), MASTER_TTL)
     }
@@ -384,32 +411,33 @@ function handleIssues(ctx: ApiContext, params: ApiParams): IssuesResponse {
 function handleIcons(ctx: ApiContext, params: ApiParams): Record<string, string> {
   const authed = authenticate(ctx)
   const userIds = parseIdList(params.userIds).slice(0, MAX_ICONS_PER_CALL)
+  const bypass = parseBool(params.refresh, false)
 
   const icons: Record<string, string> = {}
   const missing: number[] = []
   for (const userId of userIds) {
-    const cached = ctx.cache.readText('icon', [authed.scope, String(userId)])
+    const cached = bypass ? null : ctx.cache.readText('icon', [authed.scope, String(userId)])
     if (cached === null) {
       missing.push(userId)
-    } else {
+    } else if (cached !== ICON_UNAVAILABLE) {
       icons[userId] = cached
     }
   }
 
-  for (let index = 0; index < missing.length; index += DEFAULT_BATCH_SIZE) {
-    const batch = missing.slice(index, index + DEFAULT_BATCH_SIZE)
-    try {
-      const contents = authed.client.getBinaryMany(batch.map((userId) => ({ path: `/users/${userId}/icon` })))
-      for (const [offset, content] of contents.entries()) {
-        const userId = batch[offset]
-        const dataUrl = `data:${content.contentType};base64,${content.base64}`
-        ctx.cache.writeText('icon', [authed.scope, String(userId)], dataUrl, ICON_TTL)
-        icons[userId] = dataUrl
-      }
-    } catch (error: unknown) {
-      // 退会済みユーザーなどで 404 になる。まとめて投げている分だけ諦める。
-      ctx.log('アイコンの取得に失敗しました', error)
+  // 成否は 1 本ずつ受け取る。まとめて投げた 1 本が 404 でも、同じ便に乗った
+  // 他のアイコンは使えるし、キャッシュへも入れられる。
+  const contents = authed.client.getBinaryManySettled(missing.map((userId) => ({ path: `/users/${userId}/icon` })))
+  for (const [index, content] of contents.entries()) {
+    const userId = missing[index]
+    if (content === null) {
+      // 退会済みユーザーなどで取得できない。覚えておかないと毎回取りに行く。
+      ctx.log('アイコンの取得に失敗しました', userId)
+      ctx.cache.writeText('icon', [authed.scope, String(userId)], ICON_UNAVAILABLE, ICON_MISSING_TTL)
+      continue
     }
+    const dataUrl = `data:${content.contentType};base64,${content.base64}`
+    ctx.cache.writeText('icon', [authed.scope, String(userId)], dataUrl, ICON_TTL)
+    icons[userId] = dataUrl
   }
 
   return icons

@@ -6,13 +6,12 @@ import styles from './LoginPanel.module.css'
 type Props = {
   initialSpace: string
   onSubmit: (space: string) => void
-  onCancel?: () => void
   submitting: boolean
   error: string | null
 }
 
 /** Backlog のスペースを指定して OAuth ログインを開始する画面。 */
-export function LoginPanel({ initialSpace, onSubmit, onCancel, submitting, error }: Props) {
+export function LoginPanel({ initialSpace, onSubmit, submitting, error }: Props) {
   const [space, setSpace] = useState(initialSpace)
 
   const handleSubmit = (event: SyntheticEvent<HTMLFormElement>) => {
@@ -53,11 +52,6 @@ export function LoginPanel({ initialSpace, onSubmit, onCancel, submitting, error
           <button type="submit" className={styles.buttonPrimary} disabled={submitting}>
             {submitting ? 'Backlog へ移動しています…' : 'Backlog でログイン'}
           </button>
-          {onCancel ? (
-            <button type="button" className={styles.button} onClick={onCancel} disabled={submitting}>
-              キャンセル
-            </button>
-          ) : null}
         </div>
 
         <div className={styles.notes}>

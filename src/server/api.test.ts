@@ -287,6 +287,34 @@ describe('アクセストークンの更新', () => {
     expect(context.store.snapshot().session).toBeUndefined()
   })
 
+  it('一過性の失敗ではセッションを捨てない', () => {
+    // 接続不良や 5xx も OAuthError になる。ここでセッションを捨てると、
+    // まだ有効なリフレッシュトークンごと失って再ログインを強いることになる。
+    const { context } = loggedIn(
+      (request) =>
+        request.url.includes('/oauth2/token') ? textResponse(503, 'maintenance') : backlogResponse(request.url),
+      { expiresAt: TEST_NOW + 1000 }
+    )
+
+    expect(handleApiCall(context, 'projects', {})).toMatchObject({ ok: false, status: 503 })
+    expect(context.store.snapshot().session).toBeDefined()
+  })
+
+  it('リフレッシュトークンが返らない応答でも元の値を引き継ぐ', () => {
+    // Backlog は更新時に refresh_token を省略することがある。
+    const { context, stub } = loggedIn(
+      (request) =>
+        request.url.includes('/oauth2/token')
+          ? jsonResponse({ access_token: 'renewed', token_type: 'Bearer', expires_in: 3600 })
+          : backlogResponse(request.url),
+      { expiresAt: TEST_NOW + 1000 }
+    )
+
+    expect(handleApiCall(context, 'projects', {})).toMatchObject({ ok: true })
+    expect(stub.requests[1].headers?.Authorization).toBe('Bearer renewed')
+    expect(context.store.snapshot().session).toContain(SESSION.refreshToken)
+  })
+
   it('OAuth の設定が無い状態で更新が必要になったら 500 を返す', () => {
     const stub = createFetcherStub(() => jsonResponse([]))
     const store = createMemoryUserStore()
@@ -320,6 +348,35 @@ describe('icons', () => {
 
     expect(handleApiCall(context, 'icons', { userIds: '10' })).toEqual({ ok: true, data: {} })
     expect(context.logs).toContain('アイコンの取得に失敗しました')
+  })
+
+  it('取得できなかったことを覚えて、繰り返し問い合わせない', () => {
+    const { context, stub } = loggedIn(() => textResponse(404, 'not found'))
+
+    handleApiCall(context, 'icons', { userIds: '10' })
+    handleApiCall(context, 'icons', { userIds: '10' })
+    // 退会済みユーザーは 404 を返し続ける。上限の低い Icon 区分を毎回使わない。
+    expect(stub.requests).toHaveLength(1)
+  })
+
+  it('1 人が 404 でも同じ便の他のアイコンは返す', () => {
+    const { context } = loggedIn((request) =>
+      request.url.includes('/users/20/')
+        ? textResponse(404, 'gone')
+        : textResponse(200, 'png', { 'Content-Type': 'image/png' })
+    )
+
+    const result = handleApiCall(context, 'icons', { userIds: '10,20,30' })
+    const icons = (result as { data: Record<string, string> }).data
+    expect(Object.keys(icons).toSorted()).toEqual(['10', '30'])
+  })
+
+  it('再読込ではキャッシュを無視して取り直す', () => {
+    const { context, stub } = loggedIn(() => textResponse(200, 'png', { 'Content-Type': 'image/png' }))
+
+    handleApiCall(context, 'icons', { userIds: '10' })
+    handleApiCall(context, 'icons', { userIds: '10', refresh: '1' })
+    expect(stub.requests).toHaveLength(2)
   })
 
   it('ID が空なら何も問い合わせない', () => {

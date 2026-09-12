@@ -142,6 +142,41 @@ describe('withJson', () => {
     cache.withJson('ns', ['k'], 60, false, produce)
     expect(produce).toHaveBeenCalledTimes(2)
   })
+
+  it('上限を超える値を書こうとしたら、同じキーの古い値も無効にする', () => {
+    const { cache } = createCache()
+    const small = { text: 'small' }
+    const big = { text: 'x'.repeat(1_300_000) }
+
+    cache.withJson('ns', ['k'], 60, false, () => small)
+    // 再読込でキャッシュを無視して取り直したら、収まらない大きさになった。
+    cache.withJson('ns', ['k'], 60, true, () => big)
+
+    // 古い値を残すと、次の通常の読み出しが更新前の内容を返してしまう。
+    const produce = vi.fn(() => big)
+    cache.withJson('ns', ['k'], 60, false, produce)
+    expect(produce).toHaveBeenCalledTimes(1)
+  })
+
+  it('サロゲートペアを含む値も断片の境界で壊れない', () => {
+    const { cache } = createCache()
+    // 断片の境界（30,000 文字目）をペアの途中に合わせる。
+    const value = { text: `${'x'.repeat(29_999)}🎉${'y'.repeat(30_000)}` }
+
+    cache.withJson('ns', ['k'], 60, false, () => value)
+    expect(cache.withJson('ns', ['k'], 60, false, () => value)).toEqual(value)
+  })
+
+  it('produce が undefined を返したら保持しない', () => {
+    const { store, cache } = createCache()
+    const produce = vi.fn(() => undefined)
+
+    cache.withJson('ns', ['k'], 60, false, produce)
+    cache.withJson('ns', ['k'], 60, false, produce)
+    // 失敗を表す値をキャッシュすると、復旧しても期限まで配り続けることになる。
+    expect(produce).toHaveBeenCalledTimes(2)
+    expect(store.keys()).toEqual([])
+  })
 })
 
 describe('readText / writeText', () => {

@@ -153,7 +153,7 @@ pnpm dev           # http://localhost:5173
 | `pnpm format:check` | 整形されているかの確認                                           |
 | `pnpm typecheck`    | `tsc --noEmit`                                                   |
 | `pnpm test`         | Vitest                                                           |
-| `pnpm verify`       | 上記の検証をまとめて実行                                         |
+| `pnpm verify`       | 上記の検証をビルドと `smoke` まで含めてまとめて実行              |
 
 ### ビルドの仕組み
 

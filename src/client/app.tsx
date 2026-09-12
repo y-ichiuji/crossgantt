@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { isDateKey, todayKey } from '../shared/date'
-import { clampRange, filterToParams, parseFilter } from '../shared/filter'
+import {
+  clampRange,
+  defaultFilter,
+  encodeNameList,
+  filterToQuery,
+  parseFilter,
+  parseIdList,
+  parseNameList
+} from '../shared/filter'
 import { summarize } from '../shared/gantt'
 import type {
   GanttIssue,
@@ -30,6 +38,7 @@ import { GanttChart } from './components/GanttChart'
 import { LoginPanel } from './components/LoginPanel'
 import { SummaryBar } from './components/SummaryBar'
 import { loadFilterQuery, saveFilterQuery } from './filter-store'
+import { refreshIcons, resetIconCache } from './icons'
 import { loadLastSpace, saveLastSpace } from './storage'
 
 import styles from './App.module.css'
@@ -54,6 +63,7 @@ const AUTH_ERROR_MESSAGES: Record<string, string | undefined> = {
   state_mismatch: '認可リクエストの照合に失敗しました。もう一度ログインしてください。',
   state_expired: '認可の有効期限が切れました。もう一度ログインしてください。',
   token_exchange_failed: 'アクセストークンの取得に失敗しました。もう一度ログインしてください。',
+  session_write_failed: '他の操作と重なってログイン状態を保存できませんでした。もう一度ログインしてください。',
   not_configured: 'このアプリの OAuth 設定が未完了です。管理者に連絡してください。',
   access_denied: 'Backlog へのアクセスが許可されませんでした。'
 }
@@ -73,9 +83,26 @@ function isAbort(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'AbortError'
 }
 
-/** カンマ区切りに畳んだ ID キーを配列へ戻す。 */
-function parseIdsKey(key: string): number[] {
-  return key === '' ? [] : key.split(',').map(Number)
+/**
+ * 共有 URL で絞り込みが明示されているか。
+ *
+ * 期間は既定値でも必ずクエリへ書き出すため、クエリが空でないことだけでは
+ * 「利用者が条件を指定して開いた」ことにならない。認可後に戻ってきた場合も
+ * 同じクエリが付くので、これを見分けないと保存済みの条件を既定値で
+ * 上書きしてしまう。期間以外に既定値と違う項目があるかどうかで判断する。
+ */
+function hasExplicitSelection(filter: ViewFilter): boolean {
+  const base = defaultFilter()
+  return (
+    filter.projectIds.length > 0 ||
+    filter.assigneeIds.length > 0 ||
+    filter.statusNames.length > 0 ||
+    filter.keyword !== '' ||
+    filter.groupBy !== base.groupBy ||
+    filter.zoom !== base.zoom ||
+    filter.includeClosed !== base.includeClosed ||
+    filter.includeNoDate !== base.includeNoDate
+  )
 }
 
 export default function App() {
@@ -84,11 +111,11 @@ export default function App() {
   const [sessionChecked, setSessionChecked] = useState(false)
   const [loggingIn, setLoggingIn] = useState(false)
   const [authError, setAuthError] = useState<string | null>(null)
-  const [showLoginPanel, setShowLoginPanel] = useState(false)
 
   // 初期表示条件はサーバーが `doGet` で受け取ったクエリから復元する。
   // サンドボックス iframe の中からは、利用者が開いた URL は見えない。
-  const [filter, setFilter] = useState<ViewFilter>(() => parseFilter(new URLSearchParams(loadBootstrap().query)))
+  const [initialFilter] = useState<ViewFilter>(() => parseFilter(loadBootstrap().query))
+  const [filter, setFilter] = useState<ViewFilter>(initialFilter)
   const [debouncedKeyword, setDebouncedKeyword] = useState(filter.keyword)
   /**
    * 前回の表示条件を IndexedDB から戻し終えたかどうか。
@@ -110,9 +137,17 @@ export default function App() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
-  /** 再読込ボタンでキャッシュを無視するためのカウンタ。 */
+  /**
+   * 再読込ボタンを押すたびに増えるカウンタ。
+   *
+   * これを見る effect は複数あり、どれも「自分が前回走ったときから
+   * 増えているか」でキャッシュを無視するかを決める。1 つが読み捨てる形に
+   * すると他へ伝わらず、逆に取得が走らなかった回の指定が次へ持ち越される。
+   */
   const [reloadToken, setReloadToken] = useState(0)
-  const bypassCacheRef = useRef(false)
+  const projectsReloadRef = useRef(reloadToken)
+  const membersReloadRef = useRef(reloadToken)
+  const issuesReloadRef = useRef(reloadToken)
 
   const today = useMemo(() => todayKey(), [])
 
@@ -121,7 +156,7 @@ export default function App() {
    *
    * 共有 URL の組み立てと、認可後に表示条件を復元するための state に使う。
    */
-  const filterQuery = useMemo(() => filterToParams(filter).toString(), [filter])
+  const filterQuery = useMemo(() => filterToQuery(filter), [filter])
 
   const patchFilter = useCallback((patch: Partial<ViewFilter>) => {
     setFilter((prev) => {
@@ -154,7 +189,6 @@ export default function App() {
   /** 401 を受けたらセッションを捨ててログイン画面へ戻す。 */
   const handleAuthFailure = useCallback((message: string) => {
     setViewer(null)
-    setShowLoginPanel(true)
     setAuthError(message)
   }, [])
 
@@ -210,8 +244,10 @@ export default function App() {
       setStatuses([])
       setIssues([])
       setFetchedAt(null)
-      setShowLoginPanel(false)
       setAuthError(null)
+      // アイコンのキャッシュは素のユーザー ID 引きで、スペースをまたいで
+      // 使い回すと別スペースの顔写真が出てしまう。ここで捨てる。
+      resetIconCache()
       // 別スペース・別アカウントで入り直すと、残っているプロジェクト ID は
       // そのスペースには存在しない。保存済みの条件を読み直せるようにしておく。
       setFilterRestored(false)
@@ -244,13 +280,17 @@ export default function App() {
   // --- マスタ取得 ---
 
   useEffect(() => {
+    // 再読込ボタン由来の実行なら、マスタもキャッシュを無視して取り直す。
+    // そうしないと、新しく参加したプロジェクトが 30 分ぶん出てこない。
+    const bypass = reloadToken !== projectsReloadRef.current
+    projectsReloadRef.current = reloadToken
     if (!viewer) {
       return
     }
     const controller = new AbortController()
     const run = async () => {
       try {
-        setProjects(await getProjects(false, controller.signal))
+        setProjects(await getProjects(bypass, controller.signal))
       } catch (error: unknown) {
         if (!isAbort(error)) {
           reportError(error)
@@ -259,7 +299,7 @@ export default function App() {
     }
     void run()
     return () => controller.abort()
-  }, [viewer, reportError])
+  }, [viewer, reloadToken, reportError])
 
   // --- 表示条件の保存と復元 ---
 
@@ -269,7 +309,7 @@ export default function App() {
     if (!viewer || filterRestored) {
       return
     }
-    if (loadBootstrap().query !== '') {
+    if (hasExplicitSelection(initialFilter)) {
       setFilterRestored(true)
       return
     }
@@ -282,7 +322,7 @@ export default function App() {
       if (query !== null) {
         // 保存してあるのはクエリ文字列なので、URL 共有とまったく同じ経路で解釈する。
         // 壊れた値や過大な期間はここで正される。
-        setFilter(parseFilter(new URLSearchParams(query)))
+        setFilter(parseFilter(query))
       }
       setFilterRestored(true)
     }
@@ -290,7 +330,7 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [viewer, filterRestored])
+  }, [viewer, filterRestored, initialFilter])
 
   // 表示条件は変えるたびに保存し、次に開いたときの初期状態にする。
   // 復元より先に書くと既定値で上書きしてしまうため、復元の完了を待つ。
@@ -302,24 +342,28 @@ export default function App() {
     return () => clearTimeout(timer)
   }, [viewer, filterRestored, filterQuery])
 
-  // 依存配列をプリミティブだけで表現するため、配列はカンマ区切りのキーに畳む。
+  // 依存配列をプリミティブだけで表現するため、配列は 1 つの文字列に畳む。
+  // 畳み方と戻し方は共有層の規則をそのまま使う。ステータス名は利用者が
+  // 自由に付けられて `,` を含みうるため、素の join では要素が壊れる。
   const projectIdsKey = filter.projectIds.join(',')
   const assigneeIdsKey = filter.assigneeIds.join(',')
-  const statusNamesKey = filter.statusNames.join(',')
+  const statusNamesKey = encodeNameList(filter.statusNames)
 
   useEffect(() => {
+    const bypass = reloadToken !== membersReloadRef.current
+    membersReloadRef.current = reloadToken
     if (!viewer || projectIdsKey === '') {
       setMembers([])
       setStatuses([])
       return
     }
     const controller = new AbortController()
-    const ids = parseIdsKey(projectIdsKey)
+    const ids = parseIdList(projectIdsKey)
     const run = async () => {
       try {
         const [memberList, statusList] = await Promise.all([
-          getMembers(ids, false, controller.signal),
-          getStatuses(ids, false, controller.signal)
+          getMembers(ids, bypass, controller.signal),
+          getStatuses(ids, bypass, controller.signal)
         ])
         setMembers(memberList)
         setStatuses(statusList)
@@ -331,7 +375,7 @@ export default function App() {
     }
     void run()
     return () => controller.abort()
-  }, [viewer, projectIdsKey, reportError])
+  }, [viewer, projectIdsKey, reloadToken, reportError])
 
   // --- 祝日 ---
 
@@ -372,9 +416,9 @@ export default function App() {
    */
   const query = useMemo<IssuesQuery>(
     () => ({
-      projectIds: parseIdsKey(projectIdsKey),
-      assigneeIds: parseIdsKey(assigneeIdsKey),
-      statusNames: statusNamesKey === '' ? [] : statusNamesKey.split(','),
+      projectIds: parseIdList(projectIdsKey),
+      assigneeIds: parseIdList(assigneeIdsKey),
+      statusNames: parseNameList(statusNamesKey),
       from: filter.from,
       to: filter.to,
       keyword: debouncedKeyword,
@@ -394,16 +438,20 @@ export default function App() {
   )
 
   useEffect(() => {
+    // reloadToken は「再読込」ボタンのたびに増える。同じ条件でも取得をやり直すための
+    // トリガーであり、キャッシュを無視するのはこのボタン経由のときだけ。
+    const bypass = reloadToken !== issuesReloadRef.current
+    issuesReloadRef.current = reloadToken
+
     if (!viewer || query.projectIds.length === 0) {
       setIssues([])
       setFetchedAt(null)
+      // 取得中に条件が変わってここへ来ることがある。下ろさずに戻ると
+      // 読み込み中の表示のまま固まり、再読込ボタンも絞り込みも押せなくなる。
+      setLoading(false)
       return
     }
     const controller = new AbortController()
-    // reloadToken は「再読込」ボタンのたびに増える。同じ条件でも取得をやり直すための
-    // トリガーであり、キャッシュを無視するのはこのボタン経由のときだけ。
-    const bypass = reloadToken > 0 && bypassCacheRef.current
-    bypassCacheRef.current = false
 
     const run = async () => {
       setLoading(true)
@@ -434,7 +482,9 @@ export default function App() {
   }, [viewer, query, reloadToken, reportError])
 
   const handleReload = useCallback(() => {
-    bypassCacheRef.current = true
+    // アイコンはブラウザ側にも覚えてあるため、捨てないとサーバーだけ
+    // 取り直して画面は古いままになる。
+    refreshIcons()
     setReloadToken((value) => value + 1)
   }, [])
 
@@ -468,16 +518,8 @@ export default function App() {
     return <output className={styles.loading}>読み込み中…</output>
   }
 
-  if (!viewer || showLoginPanel) {
-    return (
-      <LoginPanel
-        initialSpace={viewer?.space ?? loadLastSpace()}
-        onSubmit={handleLogin}
-        onCancel={viewer ? () => setShowLoginPanel(false) : undefined}
-        submitting={loggingIn}
-        error={authError}
-      />
-    )
+  if (!viewer) {
+    return <LoginPanel initialSpace={loadLastSpace()} onSubmit={handleLogin} submitting={loggingIn} error={authError} />
   }
 
   return (

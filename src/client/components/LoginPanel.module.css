@@ -53,10 +53,6 @@
   margin-bottom: 18px;
 }
 
-.button {
-  composes: button from '../styles/controls.module.css';
-}
-
 .buttonPrimary {
   composes: buttonPrimary from '../styles/controls.module.css';
 }

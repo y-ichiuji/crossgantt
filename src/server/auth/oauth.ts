@@ -14,9 +14,14 @@ import type { Fetcher, QueryParams } from '../fetcher'
 /**
  * アクセストークンを期限切れとみなす前倒し時間（ミリ秒）。
  *
- * 実際の期限ぎりぎりまで使うと、リクエスト中に切れて 401 になるため余裕を持たせる。
+ * 判定するのは呼び出しの開始時点だけなので、余裕は「1 回の呼び出しが
+ * かかりうる最長時間」より長くする必要がある。課題取得はプロジェクトを
+ * 多数選ぶと数百ページを順に取りに行き、Apps Script の実行上限である
+ * 6 分いっぱいまで使いうる。それより短い余裕にすると、取得の途中で
+ * 期限が切れて 401 になり、リフレッシュトークンは有効なのに
+ * ログイン画面へ戻されてしまう。
  */
-export const TOKEN_REFRESH_MARGIN_MS = 60_000
+export const TOKEN_REFRESH_MARGIN_MS = 7 * 60 * 1000
 
 export type OAuthConfig = {
   clientId: string
@@ -32,12 +37,18 @@ export type TokenSet = {
   expiresAt: number
 }
 
-/** Backlog のトークンエンドポイントが返す JSON。 */
+/**
+ * Backlog のトークンエンドポイントが返す JSON。
+ *
+ * `refresh_token` は更新時に返らないことがあるため必須にしない。必須にすると
+ * 「返らなかった場合は元の値を引き継ぐ」という `refreshTokens` の処理へ
+ * 到達する前に、解釈できない応答として扱われてしまう。
+ */
 type TokenResponse = {
   access_token: string
   token_type: string
   expires_in: number
-  refresh_token: string
+  refresh_token?: string
 }
 
 export class OAuthError extends Error {
@@ -57,7 +68,7 @@ function isTokenResponse(value: unknown): value is TokenResponse {
   const candidate = value as Record<string, unknown>
   return (
     typeof candidate.access_token === 'string' &&
-    typeof candidate.refresh_token === 'string' &&
+    (candidate.refresh_token === undefined || typeof candidate.refresh_token === 'string') &&
     typeof candidate.expires_in === 'number'
   )
 }
@@ -100,7 +111,7 @@ function requestToken(space: string, payload: QueryParams, now: number, fetcher:
 
   return {
     accessToken: parsed.access_token,
-    refreshToken: parsed.refresh_token,
+    refreshToken: parsed.refresh_token ?? '',
     expiresAt: now + parsed.expires_in * 1000
   }
 }
@@ -113,7 +124,7 @@ export function exchangeCode(
   now: number,
   fetcher: Fetcher
 ): TokenSet {
-  return requestToken(
+  const tokens = requestToken(
     space,
     {
       grant_type: 'authorization_code',
@@ -125,6 +136,12 @@ export function exchangeCode(
     now,
     fetcher
   )
+  // 更新時と違い、初回の交換では引き継げる古い値が無い。ここで空のまま
+  // セッションを作ると、次の更新が必ず失敗して作り直しになる。
+  if (!tokens.refreshToken) {
+    throw new OAuthError(502, 'Backlog からリフレッシュトークンを受け取れませんでした')
+  }
+  return tokens
 }
 
 /** リフレッシュトークンでアクセストークンを更新する。 */

@@ -38,9 +38,13 @@ export function fetchProjects(client: BacklogClient): ProjectSummary[] {
  * 無関係なユーザーが担当者フィルタの候補に並ぶのを防ぐ。
  * 返り値はプロジェクト ID の並びと対応する。呼び出し側でプロジェクト単位に
  * キャッシュできるよう、統合はしない。
+ *
+ * 取得できなかったプロジェクトは null になる。参加から外された直後などに
+ * 1 件が 404 を返しても、他のプロジェクトの結果まで失わないようにする。
+ * 失敗と「本当に 0 件」を呼び出し側が区別できるよう、空配列には畳まない。
  */
-export function fetchProjectMembers(client: BacklogClient, projectIds: number[]): BacklogUser[][] {
-  return client.getMany<BacklogUser[]>(projectIds.map((projectId) => ({ path: `/projects/${projectId}/users` })))
+export function fetchProjectMembers(client: BacklogClient, projectIds: number[]): (BacklogUser[] | null)[] {
+  return client.getManySettled<BacklogUser[]>(projectIds.map((projectId) => ({ path: `/projects/${projectId}/users` })))
 }
 
 /** プロジェクトごとのユーザーを統合して担当者の選択肢にする。 */
@@ -59,9 +63,14 @@ export function mergeMembers(lists: BacklogUser[][]): MemberSummary[] {
  *
  * 返り値はプロジェクト ID の並びと対応する。呼び出し側でプロジェクト単位に
  * キャッシュできるよう、統合はしない。
+ *
+ * 取得できなかったプロジェクトは null になる。`fetchProjectMembers` と同じく、
+ * 1 件の 404 で全体を失わないようにする。
  */
-export function fetchProjectStatuses(client: BacklogClient, projectIds: number[]): BacklogStatus[][] {
-  return client.getMany<BacklogStatus[]>(projectIds.map((projectId) => ({ path: `/projects/${projectId}/statuses` })))
+export function fetchProjectStatuses(client: BacklogClient, projectIds: number[]): (BacklogStatus[] | null)[] {
+  return client.getManySettled<BacklogStatus[]>(
+    projectIds.map((projectId) => ({ path: `/projects/${projectId}/statuses` }))
+  )
 }
 
 /**

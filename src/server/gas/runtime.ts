@@ -11,6 +11,7 @@ import type { OAuthConfig } from '../auth/oauth'
 import type { UserStore } from '../auth/session'
 import { createJsonCache } from '../cache'
 import type { CacheStore, JsonCache } from '../cache'
+import { ApiFailure } from '../failure'
 import type { Fetcher, FetchRequest, FetchResponse, Sleeper } from '../fetcher'
 
 /** スクリプトプロパティのキー。 */
@@ -22,8 +23,14 @@ const PROPERTY_WEB_APP_URL = 'WEB_APP_URL'
 /** CacheService が受け付ける保持秒数の上限（6 時間）。 */
 const MAX_CACHE_TTL_SECONDS = 21_600
 
-/** トークン更新のロックを待つ上限（ミリ秒）。 */
-const LOCK_TIMEOUT_MS = 20_000
+/**
+ * セッション書き込みのロックを待つ上限（ミリ秒）。
+ *
+ * ロックの中で行うのはトークンの発行・更新 1 往復だけなので、正常なら
+ * 数秒で空く。これだけ待って取れない場合は先行する実行が異常なので、
+ * ロック無しで進めずに諦める。
+ */
+const LOCK_TIMEOUT_MS = 30_000
 
 export type GasSettings = {
   /** クライアント ID かシークレットが未設定なら null。 */
@@ -166,13 +173,15 @@ export function resolveSettings(): GasSettings {
 /**
  * 同時に走ると壊れる処理を直列化する。
  *
- * ロックが取れなかった場合も処理は続ける。待ち続けて実行時間を使い切るより、
- * 二重に走る可能性を受け入れたほうが利用者にとって害が小さい。
+ * ロックが取れなかった場合は処理を行わない。Backlog はリフレッシュトークンを
+ * ローテーションするため、直列化を諦めて二重に更新すると、後から走ったほうが
+ * 「使用済みのトークン」として 400 を受け、有効なセッションごと破棄される。
+ * 一時的な失敗として返すほうが、黙ってログアウトさせるより害が小さい。
  */
 function withLock<T>(produce: () => T): T {
   const lock = LockService.getUserLock()
   if (!lock.tryLock(LOCK_TIMEOUT_MS)) {
-    return produce()
+    throw new ApiFailure(503, '他の処理と重なりました。少し待ってからやり直してください')
   }
   try {
     return produce()

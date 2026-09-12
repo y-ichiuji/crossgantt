@@ -75,13 +75,20 @@ function loadFromApi(source: HolidaySource): Record<string, string> | null {
     return memo.holidays
   }
 
-  const holidays = source.cache.withJson<Record<string, string> | null>('holidays', [API_URL], TTL_SECONDS, false, () =>
-    fetchFromApi(source.fetcher)
+  // 取得に失敗したら undefined を返し、キャッシュへ残さない。null を返すと
+  // 「祝日が無い」という正常な値として 6 時間保持され、holidays-jp が
+  // 復旧しても全利用者の祝日表示が戻らなくなる。
+  const holidays = source.cache.withJson<Record<string, string> | undefined>(
+    'holidays',
+    [API_URL],
+    TTL_SECONDS,
+    false,
+    () => fetchFromApi(source.fetcher) ?? undefined
   )
   if (holidays && !source.skipMemo) {
     memo = { fetchedAt: source.now, holidays }
   }
-  return holidays
+  return holidays ?? null
 }
 
 /**

@@ -9,6 +9,7 @@
  * 一切渡らない（サーバーの UserProperties にのみ置かれる）。
  */
 
+import { encodeNameList } from '../shared/filter'
 import { buildAuthorizeUrl, encodeState } from '../shared/oauth'
 import { normalizeSpace } from '../shared/space'
 import type {
@@ -261,7 +262,9 @@ export async function getIssues(query: IssuesQuery, refresh: boolean, signal?: A
     params.assigneeIds = query.assigneeIds.join(',')
   }
   if (query.statusNames.length > 0) {
-    params.statuses = query.statusNames.join(',')
+    // ステータス名は `,` を含みうる。サーバーは `parseNameList` で戻すので、
+    // 畳み方も共有層の規則に合わせる。
+    params.statuses = encodeNameList(query.statusNames)
   }
   if (query.keyword) {
     params.keyword = query.keyword
@@ -283,9 +286,13 @@ export async function getIssues(query: IssuesQuery, refresh: boolean, signal?: A
  *
  * 取得できなかった ID は結果に含まれない。
  */
-export async function getIcons(userIds: number[]): Promise<Record<string, string>> {
+export async function getIcons(userIds: number[], refresh = false): Promise<Record<string, string>> {
   if (userIds.length === 0) {
     return {}
   }
-  return call<Record<string, string>>('icons', { userIds: userIds.join(',') })
+  const params: ApiParams = { userIds: userIds.join(',') }
+  if (refresh) {
+    params.refresh = '1'
+  }
+  return call<Record<string, string>>('icons', params)
 }
