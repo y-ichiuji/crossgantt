@@ -45,16 +45,59 @@ function read(name) {
 const FORBIDDEN_IN_SERVER = [
   { pattern: /\bfetch\(/u, name: 'fetch()', instead: 'UrlFetchApp（src/server/gas/runtime.ts）' },
   { pattern: /\bnew URL\(/u, name: 'new URL()', instead: 'src/server/fetcher.ts の buildUrl' },
+  // コンストラクタだけを見ていると URL.canParse() のような静的メソッドが素通りする。
+  {
+    pattern: /\bURL\s*\.\s*(?:canParse|parse|createObjectURL|revokeObjectURL)\b/u,
+    name: 'URL の静的メソッド',
+    instead: 'src/shared/space.ts の normalizeSpace'
+  },
   { pattern: /\bURLSearchParams\b/u, name: 'URLSearchParams', instead: 'src/server/fetcher.ts の encodeQuery' },
   { pattern: /\bsetTimeout\(/u, name: 'setTimeout()', instead: 'Utilities.sleep' },
+  { pattern: /\bsetInterval\(/u, name: 'setInterval()', instead: 'Utilities.sleep' },
   { pattern: /\bcrypto\./u, name: 'crypto', instead: 'Utilities.computeDigest' },
   { pattern: /\bTextEncoder\b/u, name: 'TextEncoder', instead: 'Utilities.newBlob' },
+  { pattern: /\bTextDecoder\b/u, name: 'TextDecoder', instead: 'Utilities.newBlob().getDataAsString()' },
   { pattern: /\blocalStorage\b/u, name: 'localStorage', instead: 'PropertiesService' },
-  { pattern: /\bdocument\./u, name: 'document', instead: 'HtmlService' },
-  // ScriptApp に触れるだけで、承認スコープに「トリガーの管理」が加わる。
-  // 利用者全員がそれを承認しないと画面が出ないため、使わない。
-  { pattern: /\bScriptApp\b/u, name: 'ScriptApp', instead: 'スクリプトプロパティ（WEB_APP_URL）' }
+  { pattern: /\bdocument\./u, name: 'document', instead: 'HtmlService' }
 ]
+
+/**
+ * サーバー側に現れてはいけない非同期の構文。
+ *
+ * Apps Script は `doGet` や `apiCall` の戻り値をその場で直列化するため、
+ * Promise を返すと `{}` になって「サーバーの応答を解釈できませんでした」に
+ * しか見えなくなる。ビルド対象は es2019 で async/await はそのまま残るので、
+ * 型検査でも lint でも止まらない。
+ */
+const FORBIDDEN_ASYNC_IN_SERVER = [
+  { pattern: /\basync\s+function\b/u, name: 'async function' },
+  { pattern: /\basync\s*\(/u, name: 'async の関数式' },
+  { pattern: /\bawait\s/u, name: 'await' },
+  { pattern: /\bPromise\b/u, name: 'Promise' }
+]
+
+/**
+ * 承認スコープを増やす Apps Script のサービス。
+ *
+ * Apps Script は静的解析でスコープを決めるため、参照を 1 つ足すだけで
+ * 利用者全員に再承認を求めることになり、承認しない人には画面が出ない。
+ * 中継に必要な external_request 以外は増やさない。
+ */
+const FORBIDDEN_SERVICES_IN_SERVER = [
+  // 参照するだけで承認スコープに「トリガーの管理」が加わる。
+  { pattern: /\bScriptApp\b/u, name: 'ScriptApp', instead: 'スクリプトプロパティ（WEB_APP_URL）' },
+  { pattern: /\bSession\s*\./u, name: 'Session', instead: 'Backlog から取得した利用者情報' },
+  { pattern: /\bMailApp\b/u, name: 'MailApp', instead: '（この画面は読み取り専用で通知を送らない）' },
+  { pattern: /\bGmailApp\b/u, name: 'GmailApp', instead: '（同上）' },
+  { pattern: /\bDriveApp\b/u, name: 'DriveApp', instead: 'CacheService / PropertiesService' },
+  { pattern: /\bSpreadsheetApp\b/u, name: 'SpreadsheetApp', instead: 'CacheService / PropertiesService' },
+  { pattern: /\bDocumentApp\b/u, name: 'DocumentApp', instead: 'CacheService / PropertiesService' },
+  { pattern: /\bCalendarApp\b/u, name: 'CalendarApp', instead: 'holidays-jp（src/server/holidays.ts）' },
+  { pattern: /\bContactsApp\b/u, name: 'ContactsApp', instead: '（使わない）' }
+]
+
+/** `gas/appsscript.json` に固定しておく承認スコープ。 */
+const EXPECTED_OAUTH_SCOPES = ['https://www.googleapis.com/auth/script.external_request']
 
 /** Apps Script の V8 で解釈できる保証が無い構文。esbuild が落としているはず。 */
 const FORBIDDEN_SYNTAX = [
@@ -94,6 +137,38 @@ await check('サーバー側が Apps Script に無い機能を使っていない
   for (const { pattern, name, instead } of FORBIDDEN_IN_SERVER) {
     assert(!pattern.test(code), `${name} を使っている（${instead} を使うこと）`)
   }
+})
+
+await check('サーバー側が同期処理だけで書かれている', async () => {
+  const code = await read('Code.js')
+  for (const { pattern, name } of FORBIDDEN_ASYNC_IN_SERVER) {
+    assert(!pattern.test(code), `${name} を使っている（Apps Script は戻り値をその場で直列化する）`)
+  }
+})
+
+await check('承認スコープを増やすサービスに触れていない', async () => {
+  const code = await read('Code.js')
+  for (const { pattern, name, instead } of FORBIDDEN_SERVICES_IN_SERVER) {
+    assert(!pattern.test(code), `${name} に触れている（${instead} を使うこと）`)
+  }
+})
+
+await check('承認スコープが固定されている', async () => {
+  const manifest = JSON.parse(await read('appsscript.json'))
+  const declared = manifest.oauthScopes
+  assert(Array.isArray(declared), 'appsscript.json に oauthScopes が無い')
+  // 明示しておかないと Apps Script が静的解析で勝手に決める。増えた場合は
+  // 利用者全員に再承認を求めることになるため、ここで差分を止める。
+  //
+  // 失敗時のメッセージに実際の値を載せない。`check` は捕まえた例外の内容を
+  // そのまま標準出力へ書くため、権限に関わる一覧を載せると CI のログに残る。
+  // 食い違いの中身は gas/appsscript.json と EXPECTED_OAUTH_SCOPES を
+  // 見比べてもらう。
+  assert(
+    declared.length === EXPECTED_OAUTH_SCOPES.length &&
+      declared.every((scope, index) => scope === EXPECTED_OAUTH_SCOPES[index]),
+    'gas/appsscript.json の oauthScopes が scripts/smoke.mjs の EXPECTED_OAUTH_SCOPES と一致しない'
+  )
 })
 
 await check('サーバー側の構文が落とされている', async () => {

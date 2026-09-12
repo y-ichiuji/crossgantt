@@ -40,8 +40,11 @@ const MAX_RETRY_WAIT_MS = 8000
  *
  * Backlog の Search 区分レート制限（既定で 1 分あたり 150 リクエスト程度）を
  * 一気に使い切らないよう、まとめて投げる本数を抑えている。
+ *
+ * まとめ方はこのクラスの内側の都合なので外へは出さない。呼び出し側が
+ * 本数を区切る必要があるなら、それは部分失敗を扱えていない印になる。
  */
-export const DEFAULT_BATCH_SIZE = 5
+const DEFAULT_BATCH_SIZE = 5
 
 export type BacklogClientOptions = {
   space: string
@@ -70,9 +73,29 @@ export type BinaryContent = {
 /** 再試行のループ 1 周ぶんの仕分け結果。 */
 type Outcome = {
   results: FetchResponse[]
+  /** 要求ごとの、再試行しても直らない失敗。成功していれば null。 */
+  failures: (BacklogApiError | null)[]
   retry: number[]
   waitMs: number
+  /** 最初に確定した失敗。全体を失敗として扱う場合に投げる。 */
   failure: BacklogApiError | null
+}
+
+/** 要求ごとに成否が分かれる取得の結果。 */
+type Settled = {
+  results: FetchResponse[]
+  failures: (BacklogApiError | null)[]
+}
+
+/** バッチ 1 つ分の実行に要る文脈。 */
+type BatchTask = {
+  requests: BacklogRequest[]
+  /** このバッチが担当する `requests` の添字。 */
+  batch: number[]
+  accept: string
+  attempt: number
+  outcome: Outcome
+  stopOnFailure: boolean
 }
 
 /** 配列を指定の長さごとに切る。 */
@@ -186,6 +209,47 @@ export class BacklogClient {
     }))
   }
 
+  /**
+   * JSON を複数まとめて取得し、成否を 1 本ずつ返す。
+   *
+   * 取得できなかったものは null になる。退会済みユーザーや参加から外された
+   * プロジェクトのように、一部が 404 になっても残りは使える場面で使う。
+   * まとめて投げている都合で 1 本の失敗が他を巻き添えにすることを防ぐ。
+   */
+  getManySettled<T>(requests: BacklogRequest[]): (T | null)[] {
+    if (requests.length === 0) {
+      return []
+    }
+    const settled = this.dispatch(requests, 'application/json', false)
+    return settled.results.map((response, index) => {
+      if (settled.failures[index] !== null || response === undefined) {
+        return null
+      }
+      try {
+        return JSON.parse(response.text()) as T
+      } catch {
+        return null
+      }
+    })
+  }
+
+  /** 画像などのバイナリをまとめて取得し、成否を 1 本ずつ返す。 */
+  getBinaryManySettled(requests: BacklogRequest[]): (BinaryContent | null)[] {
+    if (requests.length === 0) {
+      return []
+    }
+    const settled = this.dispatch(requests, 'image/*', false)
+    return settled.results.map((response, index) => {
+      if (settled.failures[index] !== null || response === undefined) {
+        return null
+      }
+      return {
+        base64: response.base64(),
+        contentType: response.header('Content-Type') ?? 'image/png'
+      }
+    })
+  }
+
   /** アクセストークンが外部に漏れないようメッセージからマスクする。 */
   private mask(text: string): string {
     if (!this.accessToken) {
@@ -279,11 +343,13 @@ export class BacklogClient {
     }
     const wait = this.retryDelay(response, attempt)
     if (wait === null) {
-      outcome.failure ??= new BacklogApiError(
+      const error = new BacklogApiError(
         response.status,
         describeStatus(response.status),
         this.mask(response.text().slice(0, 500))
       )
+      outcome.failures[index] = error
+      outcome.failure ??= error
       return
     }
     outcome.retry.push(index)
@@ -295,29 +361,63 @@ export class BacklogClient {
    *
    * 再試行の対象は失敗した分だけに絞る。全件投げ直すと、成功済みの分まで
    * レート制限を二重に消費してしまう。
+   *
+   * @param stopOnFailure true なら、再試行しても直らない失敗を 1 本でも受けた
+   *   時点で打ち切って投げる。false なら最後まで投げ、成否を要求ごとに返す。
    */
-  private send(requests: BacklogRequest[], accept: string): FetchResponse[] {
+  private dispatch(requests: BacklogRequest[], accept: string, stopOnFailure: boolean): Settled {
     const results = Array.from({ length: requests.length }) as FetchResponse[]
+    const failures: (BacklogApiError | null)[] = requests.map(() => null)
     let pending = requests.map((_request, index) => index)
 
     for (let attempt = 0; ; attempt += 1) {
-      const outcome: Outcome = { results, retry: [], waitMs: 0, failure: null }
+      const outcome: Outcome = { results, failures, retry: [], waitMs: 0, failure: null }
 
       for (const batch of chunk(pending, this.batchSize)) {
-        const responses = this.fetchBatch(batch.map((index) => this.toFetchRequest(requests[index], accept)))
-        for (const [offset, response] of responses.entries()) {
-          this.classify(batch[offset], response, attempt, outcome)
+        this.runBatch({ requests, batch, accept, attempt, outcome, stopOnFailure })
+        // 全体を失敗として扱うなら、この先の応答は捨てると決まっている。
+        // 投げ続けてもレート制限と実行時間を減らすだけなので打ち切る。
+        if (stopOnFailure && outcome.failure) {
+          break
         }
       }
 
-      if (outcome.failure) {
+      if (stopOnFailure && outcome.failure) {
         throw outcome.failure
       }
       if (outcome.retry.length === 0) {
-        return results
+        return { results, failures }
       }
       this.sleep(outcome.waitMs)
       pending = outcome.retry
     }
+  }
+
+  /** 1 バッチ分を投げ、応答を `outcome` へ仕分ける。 */
+  private runBatch(task: BatchTask): void {
+    const { requests, batch, accept, attempt, outcome, stopOnFailure } = task
+    let responses: FetchResponse[]
+    try {
+      responses = this.fetchBatch(batch.map((index) => this.toFetchRequest(requests[index], accept)))
+    } catch (error: unknown) {
+      if (stopOnFailure) {
+        throw error
+      }
+      // 接続そのものに失敗した。このバッチ分だけを失敗として記録し、
+      // 残りのバッチは投げ続ける。
+      const failure =
+        error instanceof BacklogApiError ? error : new BacklogApiError(502, 'Backlog への接続に失敗しました')
+      for (const index of batch) {
+        outcome.failures[index] = failure
+      }
+      return
+    }
+    for (const [offset, response] of responses.entries()) {
+      this.classify(batch[offset], response, attempt, outcome)
+    }
+  }
+
+  private send(requests: BacklogRequest[], accept: string): FetchResponse[] {
+    return this.dispatch(requests, accept, true).results
   }
 }

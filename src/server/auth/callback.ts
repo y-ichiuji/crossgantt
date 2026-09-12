@@ -10,6 +10,7 @@ import { decodeState } from '../../shared/oauth'
 import type { ApiContext } from '../api'
 import { BacklogApiError, BacklogClient } from '../backlog/client'
 import { fetchViewer } from '../backlog/masters'
+import { ApiFailure } from '../failure'
 import { exchangeCode, OAuthError } from './oauth'
 import { consumeNonce, readSession, writeSession } from './session'
 
@@ -72,23 +73,33 @@ export function handleAuthCallback(ctx: ApiContext, params: Record<string, strin
         now: ctx.now
       })
     )
-    writeSession(
-      ctx.store,
-      {
-        space: state.space,
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-        expiresAt: tokens.expiresAt,
-        userId: viewer.id,
-        userName: viewer.name
-      },
-      now
-    )
+    // セッションの書き込みはトークン更新と同じ資源を奪い合う。ロックの外で
+    // 書くと、別タブで走っている更新が「読み直す前の内容」を基に上書きし、
+    // 発行したてのリフレッシュトークンを消してしまう。
+    ctx.withLock(() => {
+      writeSession(
+        ctx.store,
+        {
+          space: state.space,
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          expiresAt: tokens.expiresAt,
+          userId: viewer.id,
+          userName: viewer.name
+        },
+        now
+      )
+    })
     return { query: state.query, errorCode: null }
   } catch (error: unknown) {
     if (error instanceof OAuthError || error instanceof BacklogApiError) {
       ctx.log('アクセストークンの取得に失敗しました', error)
       return { query: state.query, errorCode: 'token_exchange_failed' }
+    }
+    if (error instanceof ApiFailure) {
+      // 書き込みのロックを取れなかった場合。画面自体は返して、やり直せることを伝える。
+      ctx.log('セッションの保存に失敗しました', error)
+      return { query: state.query, errorCode: 'session_write_failed' }
     }
     throw error
   }

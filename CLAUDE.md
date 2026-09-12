@@ -23,16 +23,27 @@ JSON 文字列です。`google.script.run` の失敗ハンドラでは例外の�
 
 ## Apps Script 由来の制約
 
-`pnpm smoke` が機械的に検査します。破ると push は通るのに実行時に落ちます。
+破ると push は通るのに実行時に落ちます。最後の 1 つを除いて `pnpm smoke` が
+ビルド後の `gas-dist/` を読んで機械的に検査します（`pnpm verify` に含まれます）。
+`src/server/**` と `src/shared/**` は oxlint の `no-restricted-globals` でも止めます。
+smoke は tree-shaking 後のコードしか見られないため、まだ import されていない
+共有層のコードを守るのは lint の側です。
 
-- **サーバー側は同期のみ**。`fetch` / `URL` / `URLSearchParams` / `setTimeout` / `crypto` / `document` は存在しない。
-  代替は `src/server/fetcher.ts` の `buildUrl` / `encodeQuery`、`Utilities.sleep`、`Utilities.computeDigest`
-- **`ScriptApp` に触れない**。参照するだけで承認スコープに「トリガーの管理」が加わり、利用者全員がそれを承認しないと画面が出ない
+- **サーバー側は同期のみ**。`async` / `await` / `Promise` を使わない。戻り値はその場で
+  直列化されるため、Promise を返すと `{}` になり「応答を解釈できませんでした」としか見えない
+- **ブラウザと Node の組み込みは無い**。`fetch` / `URL` / `URLSearchParams` / `setTimeout` /
+  `crypto` / `TextEncoder` / `document` は存在しない。代替は `src/server/fetcher.ts` の
+  `buildUrl` / `encodeQuery`、`Utilities.sleep`、`Utilities.computeDigest`
+- **承認スコープを増やすサービスに触れない**。`ScriptApp` は参照するだけで「トリガーの管理」が
+  加わり、`Session` や `MailApp` も同様にスコープを増やす。利用者全員が承認しないと画面が出ない。
+  必要なスコープは `gas/appsscript.json` の `oauthScopes` に固定してある
 - **クライアントのバンドルは Base64 で運ぶ**。`HtmlService` はファイルの中身を HTML として解析するため、
   JavaScript の `i<n` をタグの開始と解釈してバンドルを静かに欠損させる。同じ理由で `gas/index.html` に書く
-  スクリプトでは比較演算子の `<` を使わない（`i !== n` と書く）
+  スクリプトでは比較演算子の `<` を使わない（`i !== n` と書く）。CSS は `<style>` へそのまま置くため、
+  `<` を 1 文字も含めない（`@media (width < 700px)` は書けない。`max-width` を使う）
 - **`UrlFetchApp` は 2KB を超える URL を受け付けない**。プロジェクトを多数選ぶと `projectId[]` が並ぶため、
-  課題取得は URL に収まる組へ分けて問い合わせ、課題 ID でマージする（`src/server/backlog/issues.ts`）
+  課題取得は URL に収まる組へ分けて問い合わせ、課題 ID でマージする（`src/server/backlog/issues.ts`）。
+  これだけは静的に検査できないため、`src/server/backlog/issues.test.ts` が守っています
 
 ## レート制限とキャッシュ
 

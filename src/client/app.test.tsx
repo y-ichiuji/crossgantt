@@ -199,6 +199,75 @@ describe('ログイン済みの表示', () => {
     expect(callsTo('issues')[1].params.refresh).toBe('1')
   })
 
+  it('取得中にプロジェクト選択を空にしても読み込み中のまま固まらない', async () => {
+    // 取得を中断すると `finally` は「中断済み」として読み込み状態を下ろさない。
+    // 続く実行が早期 return すると、下ろす機会が二度と来ない。
+    const pending: { release: (() => void) | null } = { release: null }
+    const base = defaultResponder(true)
+    stub?.restore()
+    stub = null
+    install(async (call) => {
+      if (call.name === 'issues') {
+        await new Promise<void>((resolve) => {
+          pending.release = resolve
+        })
+      }
+      return base(call)
+    })
+
+    const user = userEvent.setup()
+    render(<App />)
+
+    const reload = (await screen.findByRole('button', { name: '再読込' })) as HTMLButtonElement
+    await waitFor(() => {
+      expect(reload.disabled).toBe(true)
+    })
+
+    await user.click(screen.getByRole('button', { name: /プロジェクト/u }))
+    await user.click(screen.getByRole('button', { name: 'クリア' }))
+
+    await waitFor(() => {
+      expect(reload.disabled).toBe(false)
+    })
+    pending.release?.()
+  })
+
+  it('再読込はマスタ情報も取り直す', async () => {
+    // 新しく参加したプロジェクトや新設のカスタムステータスは、マスタの
+    // キャッシュを無視しないと 30 分ぶん画面に出てこない。
+    const user = userEvent.setup()
+    render(<App />)
+    await waitFor(() => {
+      expect(callsTo('issues')).toHaveLength(1)
+    })
+
+    await user.click(screen.getByRole('button', { name: '再読込' }))
+    await waitFor(() => {
+      expect(callsTo('projects')).toHaveLength(2)
+    })
+    expect(callsTo('projects')[1].params.refresh).toBe('1')
+    expect(callsTo('statuses').at(-1)?.params.refresh).toBe('1')
+    expect(callsTo('members').at(-1)?.params.refresh).toBe('1')
+  })
+
+  it('未選択のまま再読込しても、次の取得へキャッシュ無視が漏れない', async () => {
+    // 取得が走らなかった回の指定を持ち越すと、無関係な操作でマスタごと
+    // 取り直すことになる。
+    removeBootstrap()
+    installBootstrap({ webAppUrl: WEB_APP_URL })
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(await screen.findByRole('button', { name: '再読込' }))
+    await user.click(await screen.findByRole('button', { name: 'プロジェクト 未選択' }))
+    await user.click(screen.getByRole('checkbox', { name: /PJA/u }))
+
+    await waitFor(() => {
+      expect(callsTo('issues')).toHaveLength(1)
+    })
+    expect(callsTo('issues')[0].params.refresh).toBeUndefined()
+  })
+
   it('ログアウトするとログイン画面に戻る', async () => {
     const user = userEvent.setup()
     render(<App />)
@@ -354,6 +423,24 @@ describe('表示条件の保存と復元', () => {
       expect(callsTo('issues')).toHaveLength(1)
     })
     expect(callsTo('issues')[0].params.projectIds).toBe('100')
+  })
+
+  it('認可後に戻ってきただけなら保存済みの条件を上書きしない', async () => {
+    // 表示期間は既定値でも必ずクエリへ書き出すため、クエリが空でないことは
+    // 「利用者が条件を指定して開いた」ことを意味しない。認可の往復でも
+    // 同じクエリが付いて戻るので、これを共有 URL と取り違えると、
+    // ログインし直すたびに保存済みの条件が既定値で消える。
+    const saved = 'projects=200&from=2026-09-01&to=2026-09-30&zoom=week'
+    await saveFilterQuery(VIEWER.space, saved)
+    installBootstrap({ webAppUrl: WEB_APP_URL, query: 'from=2026-10-01&to=2027-01-31' })
+    install(defaultResponder(true))
+
+    render(<App />)
+    await waitFor(() => {
+      expect(callsTo('issues')).toHaveLength(1)
+    })
+    expect(callsTo('issues')[0].params.projectIds).toBe('200')
+    expect(await loadFilterQuery(VIEWER.space)).toContain('projects=200')
   })
 
   it('変更した条件を保存する', async () => {

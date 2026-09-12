@@ -30,8 +30,29 @@ describe('loadLastSpace / saveLastSpace', () => {
     expect(() => saveLastSpace('example.backlog.jp')).not.toThrow()
   })
 
+  it('localStorage の参照そのものが例外でも画面を落とさない', () => {
+    // HtmlService のサンドボックス iframe は別サイト扱いの文脈で動く。
+    // サードパーティのストレージが遮断されていると、Chrome は
+    // `window.localStorage` の参照そのものに SecurityError を投げる。
+    const original = Object.getOwnPropertyDescriptor(window, 'localStorage')
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      get() {
+        throw new DOMException('Access is denied for this document.', 'SecurityError')
+      }
+    })
+    try {
+      expect(loadLastSpace()).toBe('')
+      expect(() => saveLastSpace('example.backlog.jp')).not.toThrow()
+    } finally {
+      if (original) {
+        Object.defineProperty(window, 'localStorage', original)
+      }
+    }
+  })
+
   it('秘密情報を保存する API を持たない', () => {
-    // 認証情報は HttpOnly Cookie とサーバー側セッションで扱うため、
+    // アクセストークンはサーバーの UserProperties にだけ置くため、
     // このモジュールが公開するのはスペースの読み書きだけであるべき。
     saveLastSpace('example.backlog.jp')
     const stored = Object.entries(localStorage).map(([key, value]) => `${key}=${String(value)}`)

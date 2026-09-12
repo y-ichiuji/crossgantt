@@ -56,10 +56,27 @@ function isManifest(value: unknown): value is Manifest {
   return typeof value === 'object' && value !== null && typeof (value as Manifest).chunks === 'number'
 }
 
+/**
+ * 断片へ分ける。
+ *
+ * 長さは UTF-16 のコードユニットで数えるが、サロゲートペアの途中では切らない。
+ * 途中で切ると断片の端に上位・下位サロゲートが単独で残り、CacheService が
+ * 文字列を UTF-8 で保持する際に置換文字へ変わって復元できなくなる。
+ * 課題の件名に絵文字が含まれていれば現実に起こりうる。
+ */
 function splitChunks(text: string): string[] {
   const chunks: string[] = []
-  for (let index = 0; index < text.length; index += CHUNK_LENGTH) {
-    chunks.push(text.slice(index, index + CHUNK_LENGTH))
+  let index = 0
+  while (index < text.length) {
+    let end = Math.min(index + CHUNK_LENGTH, text.length)
+    // 末尾がサロゲートペアの前半なら、そのペアごと次の断片へ送る。
+    // `codePointAt` が 0xFFFF を超える値を返すのは、その位置から
+    // ペアで 1 文字を成しているときだけ。
+    if (end < text.length && (text.codePointAt(end - 1) ?? 0) > 0xff_ff) {
+      end -= 1
+    }
+    chunks.push(text.slice(index, end))
+    index = end
   }
   return chunks
 }
@@ -73,6 +90,10 @@ export type JsonCache = {
   writeText: (namespace: string, keyParts: string[], value: string, ttlSeconds: number) => void
   /**
    * JSON を返す処理をキャッシュ付きで実行する。
+   *
+   * `produce` が `undefined` を返した場合は結果を保持しない。取得に失敗した
+   * ことを表す値をキャッシュすると、外部サービスが復旧しても期限が切れるまで
+   * 失敗した状態を配り続けることになる。
    *
    * @param namespace キャッシュの用途を表す名前
    * @param keyParts キャッシュキーを構成する要素
@@ -132,6 +153,11 @@ export function createJsonCache(store: CacheStore, hash: Hasher): JsonCache {
   const writeRaw = (key: string, text: string, ttlSeconds: number): void => {
     const chunks = splitChunks(text)
     if (chunks.length > MAX_CHUNKS) {
+      // 書けないまま黙って戻ると、同じキーに残っている古い（小さかった頃の）
+      // 値がそのまま返り続ける。再読込した直後に更新前の内容へ戻って見えるため、
+      // 復元できない目印を書いて既存の値を無効にする。断片は参照されなくなり、
+      // それぞれの期限で消える。
+      store.putAll({ [key]: JSON.stringify({ chunks: 0 }) }, ttlSeconds)
       return
     }
     const values: Record<string, string> = { [key]: JSON.stringify({ chunks: chunks.length }) }
@@ -160,7 +186,11 @@ export function createJsonCache(store: CacheStore, hash: Hasher): JsonCache {
         }
       }
       const value = produce()
-      writeRaw(key, JSON.stringify(value), ttlSeconds)
+      // undefined は「保持しない」の合図。JSON にも書けない値なので、
+      // キャッシュ可能な値と取り違える心配がない。
+      if (value !== undefined) {
+        writeRaw(key, JSON.stringify(value), ttlSeconds)
+      }
       return value
     }
   }

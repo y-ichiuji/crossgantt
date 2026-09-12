@@ -23,6 +23,16 @@ export const PAGE_SIZE = 100
 export const MAX_PAGES_PER_QUERY = 25
 
 /**
+ * 日付未設定の課題を探すクエリだけに許すページ数。
+ *
+ * Backlog の課題検索には「日付が未設定」を表す条件が無いため、このクエリは
+ * 日付条件なしで取得してから絞り込む走査になる。件数はプロジェクトの全課題
+ * なので、他のクエリと同じ上限を与えると毎回 25 ページを使い切り、
+ * ほとんどを捨てるためだけにレート制限と実行時間を消費する。
+ */
+export const MAX_PAGES_FOR_NO_DATE = 5
+
+/**
  * 1 本の URL に収める長さの上限。
  *
  * Apps Script の `UrlFetchApp` は 2KB を超える URL を受け付けない
@@ -209,7 +219,15 @@ function planQueries(space: string, params: FetchIssuesParams): QueryPlan {
     if (params.includeNoDate) {
       // 日付が null の課題を絞り込む条件は API に存在しないため、
       // 日付条件なしで取得してから両方の日付が空のものだけを残す。
-      queries.push({ params: { ...withProjects }, noDateOnly: true })
+      //
+      // 並び順は期限日ではなく作成日の新しい順にする。期限日で並べると
+      // 期限が未設定の課題がどちらの端に寄るかは API 任せで、走査できる
+      // 範囲に 1 件も入らないことがある。日付が未設定の課題は「まだ
+      // 予定を入れていない課題」なので、新しいものから見るほうが当たる。
+      queries.push({
+        params: { ...withProjects, sort: 'created', order: 'desc' },
+        noDateOnly: true
+      })
     }
   }
 
@@ -233,7 +251,8 @@ function planPages(queries: IssueQuery[], counts: BacklogCountResponse[]): PageP
     }
 
     const neededPages = Math.ceil(count / PAGE_SIZE)
-    const pages = Math.min(neededPages, MAX_PAGES_PER_QUERY)
+    const limit = queries[queryIndex].noDateOnly ? MAX_PAGES_FOR_NO_DATE : MAX_PAGES_PER_QUERY
+    const pages = Math.min(neededPages, limit)
     if (neededPages > pages) {
       plan.truncated = true
     }

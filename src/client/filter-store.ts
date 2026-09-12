@@ -2,7 +2,7 @@
  * 表示条件のブラウザ保存（IndexedDB）。
  *
  * 次に開いたときも前回と同じ条件で始められるように、直近の表示条件を
- * 1 件だけ持つ。保存するのは `filterToParams` が組み立てるクエリ文字列で、
+ * 1 件だけ持つ。保存するのは `filterToQuery` が組み立てるクエリ文字列で、
  * 読み出した値は `parseFilter` に通して使う。URL 共有とまったく同じ経路を
  * 通すことで、壊れた値・期間の逆転・過大な期間はそこで正され、保存形式だけが
  * 別に腐っていくこともない。
@@ -23,7 +23,7 @@ const FILTER_KEY = 'viewFilter'
 type StoredFilter = {
   /** 保存した時点で見ていたスペースドメイン。 */
   space: string
-  /** `filterToParams` が組み立てたクエリ文字列（`?` は含まない）。 */
+  /** `filterToQuery` が組み立てたクエリ文字列（`?` は含まない）。 */
   query: string
 }
 
@@ -37,12 +37,17 @@ type StoredFilter = {
 let connection: Promise<IDBDatabase | null> | null = null
 
 function openDatabase(): Promise<IDBDatabase | null> {
-  if (typeof indexedDB === 'undefined') {
-    return Promise.resolve(null)
-  }
   return new Promise((resolve) => {
     let request: IDBOpenDBRequest
     try {
+      // 存在確認も try の中に置く。ストレージが遮断された文脈では
+      // `indexedDB` の参照そのものが SecurityError を投げるため、外に出すと
+      // 例外が呼び出し元の Promise の拒否になり、表示条件の復元が
+      // 終わらないまま保存機能が黙って止まる（`storage.ts` も同じ理由）。
+      if (typeof indexedDB === 'undefined') {
+        resolve(null)
+        return
+      }
       request = indexedDB.open(DB_NAME, DB_VERSION)
     } catch {
       resolve(null)

@@ -88,6 +88,19 @@ export function todayKey(now: number = Date.now()): string {
   return toDateKey(now + JST_OFFSET_MS)
 }
 
+/**
+ * JST における時刻を `HH:mm` で返す。
+ *
+ * 画面の日付はすべて JST で組み立てているため、時刻だけブラウザの
+ * タイムゾーンで描くと、日本国外から見たときに「今日」の列と食い違う。
+ */
+export function formatTimeOfDay(time: number): string {
+  const shifted = new Date(time + JST_OFFSET_MS)
+  const hours = String(shifted.getUTCHours()).padStart(2, '0')
+  const minutes = String(shifted.getUTCMinutes()).padStart(2, '0')
+  return `${hours}:${minutes}`
+}
+
 /** その月の 1 日の DateKey を返す。 */
 export function startOfMonth(dateKey: string): string {
   return `${dateKey.slice(0, 7)}-01`

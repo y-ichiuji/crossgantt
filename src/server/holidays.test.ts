@@ -128,4 +128,21 @@ describe('fetchHolidays', () => {
 
     expect(stub.requests).toHaveLength(1)
   })
+
+  it('取得に失敗した結果はキャッシュへ残さない', () => {
+    const cache = createMemoryJsonCache(() => NOW)
+    // 1 回目は holidays-jp が落ちている。
+    const failing = createFetcherStub(() => textResponse(503, 'unavailable'))
+    expect(
+      fetchHolidays('2026-09-01', '2026-09-30', { fetcher: failing.fetcher, cache, now: NOW, skipMemo: true })
+    ).toEqual([])
+
+    // キャッシュは利用者をまたいで共有され、再読込でも無視できない。
+    // 失敗を覚えてしまうと、復旧しても期限が切れるまで祝日が出なくなる。
+    const recovered = createFetcherStub(() => jsonResponse(API_2026))
+    expect(
+      fetchHolidays('2026-09-01', '2026-09-30', { fetcher: recovered.fetcher, cache, now: NOW, skipMemo: true })
+    ).toHaveLength(3)
+    expect(recovered.requests).toHaveLength(1)
+  })
 })

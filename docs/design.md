@@ -164,10 +164,6 @@ Promise を待つ手段もありません。そのためサーバー側は次の
 
 x 座標は `left = (startDate - rangeStart) / dayMs * pxPerDay`、`width = (dueDate - startDate + 1day) / dayMs * pxPerDay` で決まります。ズーム切り替えは `pxPerDay` を変えるだけです。
 
-### Durable Objects / Agents SDK について
-
-スターターに含まれる `CounterAgent` は本アプリでは使用しません。実装時に削除するか、そのまま未使用として残すかは実装フェーズで判断します（AI 機能を将来足す場合は再利用の余地があります）。
-
 ## 7. Backlog API 連携設計
 
 ### 7.1 使用するエンドポイント

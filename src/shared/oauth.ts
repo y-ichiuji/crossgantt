@@ -46,10 +46,25 @@ export type StateParts = {
   query: string
 }
 
+/**
+ * 上限に収まるところまでを、パラメータの区切りで切り出す。
+ *
+ * 長さだけを見て機械的に切ると `projects=100,200,3` のように値の途中で
+ * 切れる。復元側から見ると「妥当だが別の条件」にしか見えないため、
+ * 利用者が選んでいないプロジェクトが混ざったまま画面が出てしまう。
+ */
+function clampQuery(query: string): string {
+  if (query.length <= MAX_STATE_QUERY_LENGTH) {
+    return query
+  }
+  const boundary = query.lastIndexOf('&', MAX_STATE_QUERY_LENGTH)
+  // 最初のパラメータだけで上限を超える場合は、引き継ぐものが無い。
+  return boundary === -1 ? '' : query.slice(0, boundary)
+}
+
 /** state の値を組み立てる。 */
 export function encodeState(parts: StateParts): string {
-  const query = parts.query.slice(0, MAX_STATE_QUERY_LENGTH)
-  return [parts.nonce, parts.space, query].join(STATE_SEPARATOR)
+  return [parts.nonce, parts.space, clampQuery(parts.query)].join(STATE_SEPARATOR)
 }
 
 /**

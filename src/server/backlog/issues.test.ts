@@ -3,7 +3,14 @@ import { describe, expect, it } from 'vitest'
 import { createFetcherStub, jsonResponse } from '../test-utils'
 import type { BacklogIssue } from './api-types'
 import { BacklogClient } from './client'
-import { buildDateQueries, fetchGanttIssues, isClosedStatus, MAX_URL_LENGTH, normalizeIssue } from './issues'
+import {
+  buildDateQueries,
+  fetchGanttIssues,
+  isClosedStatus,
+  MAX_PAGES_FOR_NO_DATE,
+  MAX_URL_LENGTH,
+  normalizeIssue
+} from './issues'
 import type { FetchIssuesParams } from './issues'
 
 const SPACE = 'example.backlog.jp'
@@ -187,6 +194,32 @@ describe('fetchGanttIssues', () => {
     const result = fetchGanttIssues(client, {}, params({ includeNoDate: true }))
 
     expect(result.issues.map((issue) => issue.id).toSorted((a, b) => a - b)).toEqual([1, 99])
+  })
+
+  it('日付未設定のクエリは新しい順に、専用の上限までしか走査しない', () => {
+    // 「日付が未設定」を表す条件は API に無く、日付条件なしで取得してから
+    // 絞り込む走査になる。他のクエリと同じ上限を与えると、ほとんどを捨てる
+    // ためだけに毎回 25 ページぶんのレート制限と実行時間を使ってしまう。
+    const { stub, client } = createClient((url) => (url.pathname.endsWith('/issues/count') ? { count: 100_000 } : []))
+
+    const result = fetchGanttIssues(client, {}, params({ includeNoDate: true }))
+
+    const noDatePages = stub.requests.filter((request) => {
+      const url = new URL(request.url)
+      return (
+        url.pathname.endsWith('/issues') &&
+        !url.searchParams.has('startDateUntil') &&
+        !url.searchParams.has('dueDateUntil') &&
+        !url.searchParams.has('startDateSince')
+      )
+    })
+    expect(noDatePages).toHaveLength(MAX_PAGES_FOR_NO_DATE)
+    // 期限日の並びでは、期限が未設定の課題がどちらの端に寄るか API 任せに
+    // なる。走査範囲に入るよう作成日の新しい順で取る。
+    const firstNoDatePage = new URL(noDatePages[0].url)
+    expect(firstNoDatePage.searchParams.get('sort')).toBe('created')
+    expect(firstNoDatePage.searchParams.get('order')).toBe('desc')
+    expect(result.truncated).toBe(true)
   })
 
   it('プロジェクトが多い場合は URL に収まる組に分けて問い合わせる', () => {

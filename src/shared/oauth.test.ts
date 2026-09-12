@@ -66,9 +66,18 @@ describe('encodeState / decodeState', () => {
     expect(decodeState(undefined)).toBeNull()
   })
 
-  it('表示条件が長すぎる場合は載せる前に切る', () => {
+  it('表示条件が長すぎる場合はパラメータの区切りまでで切る', () => {
+    // 値の途中で切ると「妥当だが別の条件」として復元されてしまうため、
+    // 切るのは `&` の位置に限る。
+    const filler = `pad=${'x'.repeat(MAX_STATE_QUERY_LENGTH - 10)}`
+    const query = `${filler}&projects=100,200,300`
+    const restored = decodeState(encodeState({ nonce: NONCE, space: SPACE, query }))?.query
+    expect(restored).toBe(filler)
+  })
+
+  it('最初のパラメータだけで上限を超える場合は表示条件を落とす', () => {
     const state = encodeState({ nonce: NONCE, space: SPACE, query: 'x'.repeat(MAX_STATE_QUERY_LENGTH + 100) })
-    expect(decodeState(state)?.query).toHaveLength(MAX_STATE_QUERY_LENGTH)
+    expect(decodeState(state)?.query).toBe('')
   })
 
   it('長すぎる表示条件を含む state は受け付けない', () => {

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { defaultFilter } from '../shared/filter'
+import { defaultFilter, encodeNameList, parseNameList } from '../shared/filter'
 import { decodeState } from '../shared/oauth'
 import { NOW } from '../shared/test-fixtures'
 import type { IssuesQuery } from '../shared/types'
@@ -207,12 +207,22 @@ describe('getIssues', () => {
 
     expect(stubbed.calls[0].params).toMatchObject({
       assigneeIds: '10,20',
-      statuses: '未対応,処理中',
+      statuses: encodeNameList(['未対応', '処理中']),
       keyword: 'API',
       closed: '1',
       nodate: '1',
       refresh: '1'
     })
+  })
+
+  it('カンマを含むステータス名でも要素の境界が壊れない', async () => {
+    const stubbed = ok(response)
+    const statusNames = ['レビュー中（PR作成済み, 未マージ）', '未対応']
+
+    await getIssues(baseQuery({ statusNames }), false)
+
+    // サーバーは `parseNameList` で戻すため、往復して同じ並びになることが要件。
+    expect(parseNameList(stubbed.calls[0].params.statuses)).toEqual(statusNames)
   })
 
   it('レスポンスをそのまま返す', async () => {

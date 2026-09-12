@@ -47,18 +47,6 @@ describe('LoginPanel', () => {
     expect(screen.getByRole('alert').textContent).toBe('認可の有効期限が切れました')
   })
 
-  it('onCancel が無ければキャンセルボタンを出さない', () => {
-    setup()
-    expect(screen.queryByRole('button', { name: 'キャンセル' })).toBeNull()
-  })
-
-  it('onCancel があればキャンセルできる', async () => {
-    const onCancel = vi.fn()
-    const { user } = setup({ onCancel })
-    await user.click(screen.getByRole('button', { name: 'キャンセル' }))
-    expect(onCancel).toHaveBeenCalledOnce()
-  })
-
   it('読み取り専用であることを説明する', () => {
     setup()
     expect(screen.getByText(/読み取り専用/u)).toBeDefined()

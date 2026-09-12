@@ -188,3 +188,62 @@ describe('BacklogClient.getBinary', () => {
     expect(createClient(stub).getBinary('/users/1/icon').contentType).toBe('image/png')
   })
 })
+
+describe('BacklogClient の部分失敗', () => {
+  it('失敗が確定したら残りのバッチを投げない', () => {
+    // 401 は再試行しても直らない。結果を捨てると決まった後まで投げ続けると、
+    // レート制限と Apps Script の実行時間を使い切るだけになる。
+    const stub = createFetcherStub((_request, index) => (index === 0 ? textResponse(401, 'no') : jsonResponse({})))
+    const client = createClient(stub, { batchSize: 2 })
+
+    expect(() => client.getMany(Array.from({ length: 10 }, (_, id) => ({ path: `/issues/${id}` })))).toThrow(
+      BacklogApiError
+    )
+    // 最初のバッチ（2 本）で打ち切られる。
+    expect(stub.requests).toHaveLength(2)
+  })
+
+  it('getManySettled は失敗した分だけを null にする', () => {
+    const stub = createFetcherStub((request) =>
+      request.url.includes('/projects/2/') ? textResponse(404, 'not found') : jsonResponse([{ id: 1 }])
+    )
+
+    const results = createClient(stub).getManySettled([
+      { path: '/projects/1/statuses' },
+      { path: '/projects/2/statuses' },
+      { path: '/projects/3/statuses' }
+    ])
+
+    expect(results).toEqual([[{ id: 1 }], null, [{ id: 1 }]])
+  })
+
+  it('getBinaryManySettled も 1 本の失敗で他を巻き添えにしない', () => {
+    const stub = createFetcherStub((request) =>
+      request.url.includes('/users/20/')
+        ? textResponse(404, 'gone')
+        : textResponse(200, 'png', { 'Content-Type': 'image/png' })
+    )
+
+    const results = createClient(stub, { batchSize: 5 }).getBinaryManySettled([
+      { path: '/users/10/icon' },
+      { path: '/users/20/icon' },
+      { path: '/users/30/icon' }
+    ])
+
+    expect(results[0]).toMatchObject({ contentType: 'image/png' })
+    expect(results[1]).toBeNull()
+    expect(results[2]).toMatchObject({ contentType: 'image/png' })
+  })
+
+  it('settled でも 429 は待ってから投げ直す', () => {
+    let attempts = 0
+    const stub = createFetcherStub(() => {
+      attempts += 1
+      return attempts === 1 ? textResponse(429, 'slow down', { 'Retry-After': '1' }) : jsonResponse([{ id: 1 }])
+    })
+    const sleep = vi.fn()
+
+    expect(createClient(stub, { sleep }).getManySettled([{ path: '/projects/1/statuses' }])).toEqual([[{ id: 1 }]])
+    expect(sleep).toHaveBeenCalledOnce()
+  })
+})

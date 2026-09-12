@@ -1,3 +1,4 @@
+import { formatTimeOfDay } from '../../shared/date'
 import type { GanttSummary } from '../../shared/gantt'
 
 import styles from './SummaryBar.module.css'
@@ -10,9 +11,10 @@ type Props = {
   loading: boolean
 }
 
+/** 取得時刻の表示。時刻の組み立ては共有層（JST 固定）に任せる。 */
 function formatTime(iso: string): string {
-  const date = new Date(iso)
-  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+  const time = Date.parse(iso)
+  return Number.isNaN(time) ? '' : formatTimeOfDay(time)
 }
 
 /** 件数と取得状況のサマリー。 */

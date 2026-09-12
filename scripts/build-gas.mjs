@@ -70,21 +70,35 @@ function include(name) {
 const GENERATED_NOTE = '// scripts/build-gas.mjs が生成したファイルです。直接編集しないでください。'
 
 /**
- * HTML へ直接埋め込めない並びが無いことを確かめる。
+ * HTML へ直接埋め込めない文字が無いことを確かめる。
+ *
+ * HtmlService はファイルの中身を HTML として解析する。JavaScript では
+ * `i<n` のような比較演算子をタグの開始と見なしてバンドルを黙って欠損させた
+ * 実績があるため、JavaScript は Base64 にして運んでいる（Base64 には `<` も
+ * `&` も現れないので解析されても変化しない）。
+ *
+ * CSS は読み込みを遅らせたくないので `<style>` へそのまま置くが、同じ理由で
+ * `<` を 1 文字も含めない。`</style` だけを見ていると、
+ * `@media (width < 700px)` や `url('data:image/svg+xml,<svg …>')` が
+ * 検査を素通りして、本番でだけスタイルが途中で切れることになる。
  *
  * 埋め込む側の文字列を機械的に書き換えると、文字列リテラル以外の場所に
  * 現れた場合に意味を変えてしまう。自分たちのコードで避けられる問題なので、
  * 見つかったらビルドを止める。
- *
- * JavaScript は Base64 にして運ぶためこの検査を通さない。HtmlService は
- * ファイルの中身を HTML として解析するため、`i<n` のような比較演算子を
- * タグの開始と見なして内容を壊してしまう。Base64 には `<` も `&` も
- * 現れないので、解析されても変化しない。
  */
-function assertEmbeddable(source, closing, file) {
-  if (source.toLowerCase().includes(closing)) {
-    throw new Error(`${file} に ${closing} が含まれており、HTML へ埋め込めません`)
+function assertEmbeddableCss(css) {
+  const index = css.indexOf('<')
+  if (index === -1) {
+    return
   }
+  const around = css.slice(Math.max(0, index - 40), index + 40)
+  throw new Error(
+    [
+      `app.css に < が含まれており、HTML へ埋め込めません（位置 ${index}）。`,
+      `該当箇所: ${around}`,
+      '範囲構文は max-width / min-width で書き換え、SVG を埋め込む場合は Base64 にしてください。'
+    ].join('\n')
+  )
 }
 
 async function buildClient() {
@@ -93,7 +107,7 @@ async function buildClient() {
   const js = await readFile(path.join(CLIENT_DIR, 'app.js'), 'utf8')
   const css = await readFile(path.join(CLIENT_DIR, 'app.css'), 'utf8')
 
-  assertEmbeddable(css, '</style', 'app.css')
+  assertEmbeddableCss(css)
 
   // JavaScript をそのまま置くと HtmlService に壊される。Base64 で運ぶ。
   const encoded = Buffer.from(js, 'utf8').toString('base64')

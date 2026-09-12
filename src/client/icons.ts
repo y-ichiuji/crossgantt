@@ -12,13 +12,14 @@
 
 import { useEffect, useState } from 'react'
 
+import { MAX_ICONS_PER_CALL } from '../shared/icons'
 import { getIcons, isServerAvailable } from './api'
 
 /** まとめて取りに行くまでの待ち時間（ミリ秒）。 */
 const BATCH_DELAY_MS = 50
 
-/** 1 回の呼び出しで頼む上限。サーバー側の上限に合わせる。 */
-const MAX_PER_CALL = 60
+/** 1 回の呼び出しで頼む上限。サーバーと同じ値を共有層から取る。 */
+const MAX_PER_CALL = MAX_ICONS_PER_CALL
 
 type Listener = () => void
 
@@ -27,6 +28,12 @@ const loaded = new Map<number, string | null>()
 
 /** これから取りに行く ID。 */
 const queued = new Set<number>()
+
+/** いま取得中の ID。応答を待つ間に同じ ID を二重に頼まないための印。 */
+const inFlight = new Set<number>()
+
+/** 次の取得でサーバーのキャッシュを無視するかどうか。 */
+let bypassCache = false
 
 const listeners = new Map<number, Set<Listener>>()
 
@@ -42,14 +49,14 @@ function notify(userId: number): void {
 function settle(userIds: number[], icons: Record<string, string | undefined>): void {
   for (const userId of userIds) {
     loaded.set(userId, icons[userId] ?? null)
-    queued.delete(userId)
+    inFlight.delete(userId)
     notify(userId)
   }
 }
 
-async function load(batch: number[]): Promise<void> {
+async function load(batch: number[], bypass: boolean): Promise<void> {
   try {
-    settle(batch, await getIcons(batch))
+    settle(batch, await getIcons(batch, bypass))
   } catch {
     // アイコンが出ないだけで画面は成立する。頭文字の表示に落とす。
     settle(batch, {})
@@ -61,11 +68,20 @@ async function load(batch: number[]): Promise<void> {
 
 function flush(): void {
   timer = null
+  // 送る分は待ち行列から外す。応答を待つ間に新しいアイコンが現れると
+  // もう一度 flush が走るため、外しておかないと同じ ID をまとめて
+  // 頼み直すことになる（アイコンはレート制限の区分がとりわけ厳しい）。
   const batch = [...queued].slice(0, MAX_PER_CALL)
   if (batch.length === 0) {
     return
   }
-  void load(batch)
+  for (const userId of batch) {
+    queued.delete(userId)
+    inFlight.add(userId)
+  }
+  const bypass = bypassCache
+  bypassCache = false
+  void load(batch, bypass)
 }
 
 function schedule(): void {
@@ -108,21 +124,38 @@ export function useAssigneeIcon(userId: number | null): string | null {
       return
     }
     const unsubscribe = subscribe(userId, () => setUrl(loaded.get(userId) ?? null))
-    queued.add(userId)
-    schedule()
+    if (!inFlight.has(userId)) {
+      queued.add(userId)
+      schedule()
+    }
     return unsubscribe
   }, [userId])
 
   return url
 }
 
-/** テスト用に取得済みのアイコンと待ち行列を捨てる。 */
+/**
+ * 取得済みのアイコンと待ち行列を捨てる。
+ *
+ * このキャッシュはモジュールの寿命いっぱい生きる素の `userId` 引きなので、
+ * ログアウトして別のスペースへ入り直すと、Backlog のユーザー ID が
+ * スペースごとに独立している都合で他スペースの顔写真が出てしまう。
+ * 見ているスペースが変わるところで必ず捨てる。
+ */
 export function resetIconCache(): void {
   loaded.clear()
   queued.clear()
+  inFlight.clear()
   listeners.clear()
+  bypassCache = false
   if (timer !== null) {
     clearTimeout(timer)
     timer = null
   }
+}
+
+/** 覚えているアイコンを捨て、次の取得ではサーバーのキャッシュも無視する。 */
+export function refreshIcons(): void {
+  resetIconCache()
+  bypassCache = true
 }

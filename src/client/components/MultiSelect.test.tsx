@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { MultiSelect } from './MultiSelect'
@@ -144,6 +145,37 @@ describe('MultiSelect', () => {
     await user.type(screen.getByPlaceholderText('絞り込み'), 'プロジェクトA')
     await user.keyboard('{Enter}')
     expect(onChange).toHaveBeenCalledWith([])
+  })
+
+  it('Enter を 2 回押すと元に戻る', async () => {
+    // 選択済みを先頭へ寄せる並べ替えを選択のたびに掛け直すと、1 回目の
+    // Enter で並びが動き、2 回目は別の候補を切り替えてしまう。
+    function Controlled() {
+      const [selected, setSelected] = useState<string[]>(['2'])
+      return (
+        <>
+          <MultiSelect
+            label="プロジェクト"
+            options={OPTIONS}
+            selected={selected}
+            onChange={setSelected}
+            emptyLabel="未選択"
+            searchable
+          />
+          <output data-testid="selected">{selected.join(',')}</output>
+        </>
+      )
+    }
+    render(<Controlled />)
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('button', { name: /1件選択/u }))
+    await user.type(screen.getByPlaceholderText('絞り込み'), 'プロジェクト')
+    // 「プロジェクトA」「プロジェクトB」が残り、選択済みの B が先頭に寄る。
+    await user.keyboard('{Enter}')
+    expect(screen.getByTestId('selected').textContent).toBe('')
+    await user.keyboard('{Enter}')
+    expect(screen.getByTestId('selected').textContent).toBe('2')
   })
 
   it('Enter の対象が選択済みなら「解除」と出す', async () => {
