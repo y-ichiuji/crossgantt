@@ -78,11 +78,20 @@ export function apiCall(name: string, paramsJson: string): string {
   const settings = resolveSettings()
   const context = createApiContext(settings)
 
-  let params: ApiParams = {}
+  const params: ApiParams = {}
   try {
     const parsed: unknown = JSON.parse(paramsJson)
     if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
-      params = parsed as ApiParams
+      // 値が文字列であることはここで確かめる。`ApiParams` という型は
+      // 「クエリ文字列と同じく値はすべて文字列」という約束であり、この 1 か所が
+      // 唯一の入口である。素通しにすると `{"projectIds": 5}` のような入力が
+      // `parseIdList` の `value.split` まで届いて TypeError になり、入力の誤りが
+      // 「予期しないエラーが発生しました」という 500 にしか見えなくなる。
+      for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+        if (typeof value === 'string') {
+          params[key] = value
+        }
+      }
     }
   } catch {
     // 壊れた入力は「パラメータなし」として扱う。各ハンドラが検証する。

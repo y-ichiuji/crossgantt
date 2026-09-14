@@ -57,7 +57,10 @@ export type FetchIssuesParams = {
 
 export type FetchIssuesResult = {
   issues: GanttIssue[]
+  /** 表示期間に重なる課題を取り切れずに打ち切った場合 true。 */
   truncated: boolean
+  /** 日付未設定の課題の走査を打ち切った場合 true。 */
+  noDateTruncated: boolean
 }
 
 /** 1 種類の検索条件。 */
@@ -73,6 +76,7 @@ type PagePlan = {
   /** `requests[i]` がどのクエリに属するか。 */
   owners: number[]
   truncated: boolean
+  noDateTruncated: boolean
 }
 
 /**
@@ -236,7 +240,7 @@ function planQueries(space: string, params: FetchIssuesParams): QueryPlan {
 
 /** 件数の応答から、実際に投げるページ取得要求を組み立てる。 */
 function planPages(queries: IssueQuery[], counts: BacklogCountResponse[]): PagePlan {
-  const plan: PagePlan = { requests: [], owners: [], truncated: false }
+  const plan: PagePlan = { requests: [], owners: [], truncated: false, noDateTruncated: false }
 
   for (const [queryIndex, response] of counts.entries()) {
     const count = response.count
@@ -250,11 +254,20 @@ function planPages(queries: IssueQuery[], counts: BacklogCountResponse[]): PageP
       continue
     }
 
+    const { noDateOnly } = queries[queryIndex]
     const neededPages = Math.ceil(count / PAGE_SIZE)
-    const limit = queries[queryIndex].noDateOnly ? MAX_PAGES_FOR_NO_DATE : MAX_PAGES_PER_QUERY
+    const limit = noDateOnly ? MAX_PAGES_FOR_NO_DATE : MAX_PAGES_PER_QUERY
     const pages = Math.min(neededPages, limit)
     if (neededPages > pages) {
-      plan.truncated = true
+      // 日付条件なしのクエリの件数はプロジェクトの全課題なので、ほぼ必ず上限を
+      // 超える。これを「表示期間の課題を取り切れなかった」と同じ印にすると、
+      // 実際には取り切れているのに「期間を絞り込んでください」と案内し続ける
+      // ことになる（しかもこのクエリは期間を絞っても縮まない）。別の印にする。
+      if (noDateOnly) {
+        plan.noDateTruncated = true
+      } else {
+        plan.truncated = true
+      }
     }
     for (let page = 0; page < pages; page += 1) {
       plan.requests.push({
@@ -328,7 +341,7 @@ export function fetchGanttIssues(
   params: FetchIssuesParams
 ): FetchIssuesResult {
   if (params.projectIds.length === 0) {
-    return { issues: [], truncated: false }
+    return { issues: [], truncated: false, noDateTruncated: false }
   }
 
   const { queries, localAssigneeIds, localStatusIds } = planQueries(client.space, params)
@@ -354,5 +367,5 @@ export function fetchGanttIssues(
     }
   }
 
-  return { issues: [...byId.values()], truncated: plan.truncated }
+  return { issues: [...byId.values()], truncated: plan.truncated, noDateTruncated: plan.noDateTruncated }
 }

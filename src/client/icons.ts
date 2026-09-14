@@ -37,6 +37,14 @@ let bypassCache = false
 
 const listeners = new Map<number, Set<Listener>>()
 
+/**
+ * キャッシュを捨てた回数。
+ *
+ * 捨てる前に投げた取得が後から返ってくると、取り直したはずの表を
+ * 古い値で埋め直してしまう。投げた時点の値と突き合わせて弾く。
+ */
+let generation = 0
+
 let timer: ReturnType<typeof setTimeout> | null = null
 
 function notify(userId: number): void {
@@ -55,15 +63,29 @@ function settle(userIds: number[], icons: Record<string, string | undefined>): v
 }
 
 async function load(batch: number[], bypass: boolean): Promise<void> {
+  const issued = generation
   try {
-    settle(batch, await getIcons(batch, bypass))
+    const icons = await getIcons(batch, bypass)
+    // 投げたあとにキャッシュを捨てていた場合、この応答は捨てた前の内容である。
+    // 書き戻すと取り直したはずの表が古い値で埋まり直してしまう。
+    if (issued !== generation) {
+      return
+    }
+    settle(batch, icons)
   } catch {
     // アイコンが出ないだけで画面は成立する。頭文字の表示に落とす。
+    if (issued !== generation) {
+      return
+    }
     settle(batch, {})
   }
   if (queued.size > 0) {
     schedule()
+    return
   }
+  // 待ち行列を出し切ったところでキャッシュ無視の指定を下ろす。1 便目だけで
+  // 下ろすと、上限を超えた分が 2 便目以降でサーバーのキャッシュを引いてしまう。
+  bypassCache = false
 }
 
 function flush(): void {
@@ -79,9 +101,7 @@ function flush(): void {
     queued.delete(userId)
     inFlight.add(userId)
   }
-  const bypass = bypassCache
-  bypassCache = false
-  void load(batch, bypass)
+  void load(batch, bypassCache)
 }
 
 function schedule(): void {
@@ -113,21 +133,32 @@ export function useAssigneeIcon(userId: number | null): string | null {
       setUrl(null)
       return
     }
-    const known = loaded.get(userId)
-    if (known !== undefined) {
-      setUrl(known)
-      return
+    /**
+     * 覚えている値を画面へ写し、まだ無ければ取りに行く。
+     *
+     * 購読を張ったあとにも呼ばれる。`resetIconCache` はキャッシュを捨てたことを
+     * 購読者へ知らせるので、ここで取り直しまで面倒を見ないと、行が作り直されない
+     * 再読込では取得が一度も走らず画面が古いままになる。
+     */
+    const sync = (): void => {
+      const known = loaded.get(userId)
+      if (known !== undefined) {
+        setUrl(known)
+        return
+      }
+      setUrl(null)
+      // サーバーがいない（ローカル開発やテスト）ときは取りに行かない。
+      if (!isServerAvailable()) {
+        return
+      }
+      if (!inFlight.has(userId)) {
+        queued.add(userId)
+        schedule()
+      }
     }
-    setUrl(null)
-    // サーバーがいない（ローカル開発やテスト）ときは取りに行かない。
-    if (!isServerAvailable()) {
-      return
-    }
-    const unsubscribe = subscribe(userId, () => setUrl(loaded.get(userId) ?? null))
-    if (!inFlight.has(userId)) {
-      queued.add(userId)
-      schedule()
-    }
+
+    const unsubscribe = subscribe(userId, sync)
+    sync()
     return unsubscribe
   }, [userId])
 
@@ -141,16 +172,26 @@ export function useAssigneeIcon(userId: number | null): string | null {
  * ログアウトして別のスペースへ入り直すと、Backlog のユーザー ID が
  * スペースごとに独立している都合で他スペースの顔写真が出てしまう。
  * 見ているスペースが変わるところで必ず捨てる。
+ *
+ * 購読そのものは捨てない。購読は表示中の行が持っているものであってキャッシュの
+ * 持ち物ではなく、捨ててしまうと「捨てたので取り直してほしい」を伝える相手が
+ * いなくなる。代わりに全員へ知らせ、必要な行に取り直させる。
  */
 export function resetIconCache(): void {
   loaded.clear()
   queued.clear()
   inFlight.clear()
-  listeners.clear()
   bypassCache = false
   if (timer !== null) {
     clearTimeout(timer)
     timer = null
+  }
+  // 飛行中の取得が後から書き戻すのを防ぐ。知らせるより先に上げる。
+  generation += 1
+  for (const set of listeners.values()) {
+    for (const listener of set) {
+      listener()
+    }
   }
 }
 

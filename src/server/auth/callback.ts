@@ -33,15 +33,19 @@ export function isAuthCallback(params: Record<string, string | undefined>): bool
  * 表示はクライアントに任せる。
  */
 export function handleAuthCallback(ctx: ApiContext, params: Record<string, string | undefined>): CallbackResult {
+  // 失敗しても表示条件は返す。認可を断ったときに条件まで失うと、共有 URL で
+  // 開いた利用者はリンクを開き直すところからやり直すことになる。
+  const state = decodeState(params.state)
+  const pendingQuery = state?.query ?? ''
+
   const authError = params.error
   if (authError) {
-    return { query: '', errorCode: authError }
+    return { query: pendingQuery, errorCode: authError }
   }
 
   const code = params.code
-  const state = decodeState(params.state)
   if (!code) {
-    return { query: '', errorCode: 'missing_code' }
+    return { query: pendingQuery, errorCode: 'missing_code' }
   }
   // 許可ドメイン以外のスペースや、形の合わない state はここで弾く。
   if (!state) {

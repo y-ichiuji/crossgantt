@@ -57,16 +57,27 @@ const FILTER_SAVE_DEBOUNCE_MS = 500
 /** 「コピーしました」の表示を戻すまでの時間。 */
 const COPIED_FEEDBACK_MS = 1500
 
-/** 認可フローが失敗したときにサーバーから渡される理由コードの説明。 */
-const AUTH_ERROR_MESSAGES: Record<string, string | undefined> = {
-  missing_code: '認可コードを受け取れませんでした。もう一度ログインしてください。',
-  state_mismatch: '認可リクエストの照合に失敗しました。もう一度ログインしてください。',
-  state_expired: '認可の有効期限が切れました。もう一度ログインしてください。',
-  token_exchange_failed: 'アクセストークンの取得に失敗しました。もう一度ログインしてください。',
-  session_write_failed: '他の操作と重なってログイン状態を保存できませんでした。もう一度ログインしてください。',
-  not_configured: 'このアプリの OAuth 設定が未完了です。管理者に連絡してください。',
-  access_denied: 'Backlog へのアクセスが許可されませんでした。'
-}
+/** 日付が変わっていないかを見直す間隔。開きっぱなしの画面が日をまたぐため。 */
+const TODAY_CHECK_MS = 60 * 1000
+
+/**
+ * 認可フローが失敗したときにサーバーから渡される理由コードの説明。
+ *
+ * 理由コードは `?error=` に書かれた値がそのまま届く、つまり誰でも書ける値なので、
+ * 素のオブジェクトではなく `Map` に入れる（`shared/filter.ts` の `parseQuery` と同じ理由）。
+ * オブジェクトだと `__proto__` や `toString` がプロトタイプ側へ届き、文字列でない値が
+ * `??` をすり抜けて描画へ渡る。React は要素でないオブジェクトを子に受け取ると例外を投げ、
+ * 境界が無いため画面全体が消える。
+ */
+const AUTH_ERROR_MESSAGES = new Map<string, string>([
+  ['missing_code', '認可コードを受け取れませんでした。もう一度ログインしてください。'],
+  ['state_mismatch', '認可リクエストの照合に失敗しました。もう一度ログインしてください。'],
+  ['state_expired', '認可の有効期限が切れました。もう一度ログインしてください。'],
+  ['token_exchange_failed', 'アクセストークンの取得に失敗しました。もう一度ログインしてください。'],
+  ['session_write_failed', '他の操作と重なってログイン状態を保存できませんでした。もう一度ログインしてください。'],
+  ['not_configured', 'このアプリの OAuth 設定が未完了です。管理者に連絡してください。'],
+  ['access_denied', 'Backlog へのアクセスが許可されませんでした。']
+])
 
 function toMessage(error: unknown): string {
   if (error instanceof ApiError) {
@@ -131,6 +142,7 @@ export default function App() {
 
   const [issues, setIssues] = useState<GanttIssue[]>([])
   const [truncated, setTruncated] = useState(false)
+  const [noDateTruncated, setNoDateTruncated] = useState(false)
   const [requestCount, setRequestCount] = useState(0)
   const [fetchedAt, setFetchedAt] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -149,7 +161,20 @@ export default function App() {
   const membersReloadRef = useRef(reloadToken)
   const issuesReloadRef = useRef(reloadToken)
 
-  const today = useMemo(() => todayKey(), [])
+  /**
+   * JST における今日。
+   *
+   * 画面は開きっぱなしで使われるため、起動時に固定すると日付をまたいだ時点で
+   * 「今日」の帯が前日に残り、期限切れの判定やサマリーの遅延件数まで
+   * 1 日ぶんずれる。定期的に見直し、変わったときだけ差し替える
+   * （同じ値を渡した `useState` の更新は再描画を起こさない）。
+   */
+  const [today, setToday] = useState(() => todayKey())
+
+  useEffect(() => {
+    const timer = setInterval(() => setToday(todayKey()), TODAY_CHECK_MS)
+    return () => clearInterval(timer)
+  }, [])
 
   /**
    * 表示条件をクエリ文字列に畳んだもの。
@@ -209,7 +234,7 @@ export default function App() {
   useEffect(() => {
     const code = loadBootstrap().authError
     if (code) {
-      setAuthError(AUTH_ERROR_MESSAGES[code] ?? `ログインに失敗しました（${code}）`)
+      setAuthError(AUTH_ERROR_MESSAGES.get(code) ?? `ログインに失敗しました（${code}）`)
     }
   }, [])
 
@@ -243,6 +268,9 @@ export default function App() {
       setMembers([])
       setStatuses([])
       setIssues([])
+      setTruncated(false)
+      setNoDateTruncated(false)
+      setRequestCount(0)
       setFetchedAt(null)
       setAuthError(null)
       // アイコンのキャッシュは素のユーザー ID 引きで、スペースをまたいで
@@ -251,6 +279,12 @@ export default function App() {
       // 別スペース・別アカウントで入り直すと、残っているプロジェクト ID は
       // そのスペースには存在しない。保存済みの条件を読み直せるようにしておく。
       setFilterRestored(false)
+      // 表示条件も既定へ戻す。プロジェクト ID も担当者 ID もスペースごとの採番なので、
+      // 残したままだと次のログインの `state` に前のスペースの ID が載り、
+      // 戻ってきた画面が「参照できないプロジェクト」を要求して 403 になる。
+      const initial = defaultFilter()
+      setFilter(initial)
+      setDebouncedKeyword(initial.keyword)
     }
     void run()
   }, [])
@@ -322,7 +356,13 @@ export default function App() {
       if (query !== null) {
         // 保存してあるのはクエリ文字列なので、URL 共有とまったく同じ経路で解釈する。
         // 壊れた値や過大な期間はここで正される。
-        setFilter(parseFilter(query))
+        const restored = parseFilter(query)
+        setFilter(restored)
+        // キーワードのデバウンス後の値も一緒に合わせる。ここを置き去りにすると、
+        // 復元直後にキーワード無しで 1 回取得し、800ms 後にキーワード付きでもう 1 回
+        // 取得することになる。Search 区分のリクエストを二重に使い、間は
+        // 絞り込まれていない一覧が見えてしまう。
+        setDebouncedKeyword(restored.keyword)
       }
       setFilterRestored(true)
     }
@@ -445,6 +485,11 @@ export default function App() {
 
     if (!viewer || query.projectIds.length === 0) {
       setIssues([])
+      // 取得結果に付いてくる情報は一緒に下ろす。残したままだと、課題が 1 件も
+      // 無い画面で「件数が多いため一部のみ表示しています」と案内し続ける。
+      setTruncated(false)
+      setNoDateTruncated(false)
+      setRequestCount(0)
       setFetchedAt(null)
       // 取得中に条件が変わってここへ来ることがある。下ろさずに戻ると
       // 読み込み中の表示のまま固まり、再読込ボタンも絞り込みも押せなくなる。
@@ -460,6 +505,7 @@ export default function App() {
         const response = await getIssues(query, bypass, controller.signal)
         setIssues(response.issues)
         setTruncated(response.truncated)
+        setNoDateTruncated(response.noDateTruncated)
         setRequestCount(response.requestCount)
         setFetchedAt(response.fetchedAt)
       } catch (error: unknown) {
@@ -468,6 +514,12 @@ export default function App() {
         }
         reportError(error)
         setIssues([])
+        setTruncated(false)
+        setNoDateTruncated(false)
+        setRequestCount(0)
+        // 取得時刻を残すと、エラーの隣に前回成功したときの時刻が出て
+        // 「いま取れた内容」に見えてしまう。
+        setFetchedAt(null)
       } finally {
         // 中断された場合は後続のリクエストがすでに走っている。ここで下ろすと
         // 読み込み中なのに完了扱いになり、再読込ボタンが押せてしまう。
@@ -558,6 +610,7 @@ export default function App() {
       <SummaryBar
         summary={summary}
         truncated={truncated}
+        noDateTruncated={noDateTruncated}
         requestCount={requestCount}
         fetchedAt={fetchedAt}
         loading={loading}

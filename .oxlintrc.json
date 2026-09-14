@@ -359,7 +359,7 @@
       // 禁じておかないと、存在しないグローバルを使っても何も言われない。
       // `pnpm smoke` は tree-shaking 後の Code.js しか見られないので、
       // サーバーがまだ import していない共有層のコードは検査できない。
-      "files": ["src/server/**/*.ts", "src/shared/**/*.ts"],
+      "files": ["src/server/**/*.ts", "src/shared/**/*.ts", "src/server/**/*.tsx", "src/shared/**/*.tsx"],
       "rules": {
         "no-restricted-globals": [
           "error",
@@ -376,7 +376,55 @@
           { "name": "indexedDB", "message": "ブラウザ専用" },
           { "name": "document", "message": "ブラウザ専用。HtmlService を使う" },
           { "name": "window", "message": "ブラウザ専用" },
-          { "name": "navigator", "message": "ブラウザ専用" }
+          { "name": "navigator", "message": "ブラウザ専用" },
+          // 戻り値はその場で直列化されるため、Promise を返すと `{}` になり
+          // 「応答を解釈できませんでした」としか見えない。`pnpm smoke` も
+          // tree-shaking 後の Code.js しか見られず、まだ import されていない
+          // 共有層のコードは検査できないため、ここで止める。
+          { "name": "Promise", "message": "サーバー側は同期のみ。Apps Script は戻り値をその場で直列化する" },
+          // Apps Script のグローバルに触れてよいのは src/server/gas/ だけ。
+          // 下の override でそこだけ許可している。
+          { "name": "UrlFetchApp", "message": "src/server/gas/ の外からは触らない。Fetcher 越しに使う" },
+          { "name": "CacheService", "message": "src/server/gas/ の外からは触らない。JsonCache 越しに使う" },
+          { "name": "PropertiesService", "message": "src/server/gas/ の外からは触らない。UserStore 越しに使う" },
+          { "name": "LockService", "message": "src/server/gas/ の外からは触らない。ApiContext.withLock を使う" },
+          { "name": "HtmlService", "message": "src/server/gas/ の外からは触らない" },
+          { "name": "Utilities", "message": "src/server/gas/ の外からは触らない。Hasher / Sleeper 越しに使う" },
+          { "name": "ScriptApp", "message": "承認スコープに「トリガーの管理」が加わる。触らない" },
+          { "name": "Session", "message": "承認スコープが増える。触らない" },
+          { "name": "MailApp", "message": "承認スコープが増える。触らない" },
+          { "name": "DriveApp", "message": "承認スコープが増える。触らない" },
+          { "name": "SpreadsheetApp", "message": "承認スコープが増える。触らない" }
+        ]
+      }
+    },
+    {
+      // Apps Script のサービスにつなぐ層。ここだけがグローバルへ触れてよい。
+      // ブラウザ専用のものと、承認スコープを増やすサービスは引き続き禁じる。
+      "files": ["src/server/gas/**/*.ts"],
+      "rules": {
+        "no-restricted-globals": [
+          "error",
+          { "name": "fetch", "message": "Apps Script には無い。UrlFetchApp を使う" },
+          { "name": "URL", "message": "Apps Script には無い。src/server/fetcher.ts の buildUrl を使う" },
+          { "name": "URLSearchParams", "message": "Apps Script には無い。encodeURIComponent で組み立てる" },
+          { "name": "setTimeout", "message": "Apps Script には無い。Utilities.sleep を使う" },
+          { "name": "setInterval", "message": "Apps Script には無い" },
+          { "name": "crypto", "message": "Apps Script には無い。Utilities.computeDigest を使う" },
+          { "name": "TextEncoder", "message": "Apps Script には無い。Utilities.newBlob を使う" },
+          { "name": "TextDecoder", "message": "Apps Script には無い。Utilities.newBlob を使う" },
+          { "name": "localStorage", "message": "ブラウザ専用。PropertiesService を使う" },
+          { "name": "sessionStorage", "message": "ブラウザ専用" },
+          { "name": "indexedDB", "message": "ブラウザ専用" },
+          { "name": "document", "message": "ブラウザ専用。HtmlService を使う" },
+          { "name": "window", "message": "ブラウザ専用" },
+          { "name": "navigator", "message": "ブラウザ専用" },
+          { "name": "Promise", "message": "サーバー側は同期のみ。Apps Script は戻り値をその場で直列化する" },
+          { "name": "ScriptApp", "message": "承認スコープに「トリガーの管理」が加わる。触らない" },
+          { "name": "Session", "message": "承認スコープが増える。触らない" },
+          { "name": "MailApp", "message": "承認スコープが増える。触らない" },
+          { "name": "DriveApp", "message": "承認スコープが増える。触らない" },
+          { "name": "SpreadsheetApp", "message": "承認スコープが増える。触らない" }
         ]
       }
     },

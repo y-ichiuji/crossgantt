@@ -47,19 +47,33 @@ export type StateParts = {
 }
 
 /**
- * 上限に収まるところまでを、パラメータの区切りで切り出す。
+ * 上限に収まるまで、パラメータを 1 つずつ丸ごと落とす。
  *
  * 長さだけを見て機械的に切ると `projects=100,200,3` のように値の途中で
  * 切れる。復元側から見ると「妥当だが別の条件」にしか見えないため、
  * 利用者が選んでいないプロジェクトが混ざったまま画面が出てしまう。
+ *
+ * 落とすのは長いパラメータから。末尾を切り落とす形にすると、`filterToQuery` が
+ * 先に書き出す ID の一覧（`projects` / `assignees`）が残り、最後に書き出す
+ * `from` / `to` のほうが落ちる。この 2 つは既定値と同じでも必ず書き出している
+ * 項目で、欠けると認可から戻った画面の表示期間が「開いた日」しだいで変わる。
+ * 短い項目を残して長い一覧から削れば、落ちる情報がいちばん少なくて済む。
  */
 function clampQuery(query: string): string {
   if (query.length <= MAX_STATE_QUERY_LENGTH) {
     return query
   }
-  const boundary = query.lastIndexOf('&', MAX_STATE_QUERY_LENGTH)
-  // 最初のパラメータだけで上限を超える場合は、引き継ぐものが無い。
-  return boundary === -1 ? '' : query.slice(0, boundary)
+  const parts = query.split('&')
+  while (parts.length > 0 && parts.join('&').length > MAX_STATE_QUERY_LENGTH) {
+    let longest = 0
+    for (let index = 1; index < parts.length; index += 1) {
+      if (parts[index].length > parts[longest].length) {
+        longest = index
+      }
+    }
+    parts.splice(longest, 1)
+  }
+  return parts.join('&')
 }
 
 /** state の値を組み立てる。 */

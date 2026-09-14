@@ -12,7 +12,7 @@
  */
 
 import { diffDays, isDateKey } from '../shared/date'
-import { MAX_RANGE_DAYS, parseBool, parseIdList, parseNameList } from '../shared/filter'
+import { encodeNameList, MAX_RANGE_DAYS, parseBool, parseIdList, parseNameList } from '../shared/filter'
 import { MAX_ICONS_PER_CALL } from '../shared/icons'
 import type {
   ApiEnvelope,
@@ -122,10 +122,17 @@ type Authed = {
  * 同時に呼ぶので、更新はロックで直列化し、ロックを取ってから保存済みの
  * 内容を読み直す。
  */
-function renewAccessToken(ctx: ApiContext, session: SessionRecord): string {
+function renewAccessToken(ctx: ApiContext): string {
   return ctx.withLock(() => {
     const now = ctx.now()
-    const latest = readSession(ctx.store, now) ?? session
+    // ロックを待っている間にセッションが消えていることがある（別タブのログアウトや、
+    // 先にリフレッシュを試みた実行が 401 を受けて破棄した場合）。ここでロック前の
+    // 写しへ戻すと、消えたはずのセッションを更新して 30 日ぶんの期限付きで
+    // 書き直してしまい、ログアウトが効かなくなる。
+    const latest = readSession(ctx.store, now)
+    if (!latest) {
+      throw unauthorized('ログインしていません')
+    }
     if (!needsRefresh(latest.expiresAt, now)) {
       return latest.accessToken
     }
@@ -169,7 +176,7 @@ function authenticate(ctx: ApiContext): Authed {
     throw unauthorized('ログインしていません')
   }
 
-  const accessToken = needsRefresh(session.expiresAt, ctx.now()) ? renewAccessToken(ctx, session) : session.accessToken
+  const accessToken = needsRefresh(session.expiresAt, ctx.now()) ? renewAccessToken(ctx) : session.accessToken
 
   return {
     session,
@@ -198,6 +205,10 @@ function cachedProjects(ctx: ApiContext, authed: Authed, bypass: boolean): Proje
  * 取りに行けば済む。プロジェクトを数十個選ぶ使い方では、この差が
  * そのままレート制限への当たりになる。
  *
+ * 返り値は `projectIds` と同じ並びで、取得できなかったプロジェクトは null のまま
+ * 返す。空配列に畳むと、呼び出し側が「取得に失敗した」と「本当に 0 件」を
+ * 見分けられなくなり、一時的な失敗が「該当なし」として表に出てしまう。
+ *
  * @param fetchMissing キャッシュに無いプロジェクトだけを渡される。返り値は引数と
  *   同じ並びで、取得できなかったプロジェクトは null。
  */
@@ -208,7 +219,7 @@ function cachedPerProject<T>(
   projectIds: number[],
   bypass: boolean,
   fetchMissing: (ids: number[]) => (T[] | null)[]
-): T[][] {
+): (T[] | null)[] {
   const found = new Map<number, T[]>()
   const missing: number[] = []
 
@@ -238,15 +249,26 @@ function cachedPerProject<T>(
     }
   }
 
-  return projectIds.map((projectId) => found.get(projectId) ?? [])
+  return projectIds.map((projectId) => found.get(projectId) ?? null)
 }
 
-/** ステータス一覧をキャッシュ経由で取得する。キーの定義を 1 か所に保つため関数にしている。 */
+/**
+ * ステータス一覧をキャッシュ経由で取得する。キーの定義を 1 か所に保つため関数にしている。
+ *
+ * 1 件も取れなかった場合は一時的な失敗として投げる。ここで空の一覧を返すと
+ * `resolveStatusIds` が空の ID 群を返し、呼び出し元が「条件に合う課題が無い」として
+ * 0 件を返してしまう。その結果はキャッシュにも載るため、Backlog が復旧しても
+ * しばらく空のまま配り続けることになる。
+ */
 function cachedStatusGroups(ctx: ApiContext, authed: Authed, projectIds: number[], bypass: boolean): StatusGroup[] {
   const lists = cachedPerProject<BacklogStatus>(ctx, 'statuses', authed.scope, projectIds, bypass, (ids) =>
     fetchProjectStatuses(authed.client, ids)
   )
-  return groupStatuses(lists.flat())
+  const fetched = lists.filter((list): list is BacklogStatus[] => list !== null)
+  if (projectIds.length > 0 && fetched.length === 0) {
+    throw new ApiFailure(503, 'ステータス情報を取得できませんでした。少し待ってからやり直してください')
+  }
+  return groupStatuses(fetched.flat())
 }
 
 /**
@@ -320,7 +342,9 @@ function handleMembers(ctx: ApiContext, params: ApiParams): MemberSummary[] {
     bypass,
     (ids) => fetchProjectMembers(authed.client, ids)
   )
-  return mergeMembers(lists)
+  // 取得できなかったプロジェクトは候補に足さない。担当者の選択肢が欠けても
+  // 画面は成立するため、ステータスと違ってここでは失敗扱いにしない。
+  return mergeMembers(lists.filter((list): list is BacklogUser[] => list !== null))
 }
 
 /** 課題取得の本体。ページングとクエリのマージはここで完結させる。 */
@@ -349,7 +373,10 @@ function handleIssues(ctx: ApiContext, params: ApiParams): IssuesResponse {
     authed.scope,
     projectIds.join(','),
     assigneeIds.join(','),
-    statusNames.join(','),
+    // ステータス名は利用者が自由に付けられて `,` を含みうる。素の join だと
+    // 「`A,B` という 1 つのステータス」と「`A` と `B` の 2 つ」が同じキーへ畳まれ、
+    // 別々の条件が同じキャッシュを引いてしまう。畳み方は共有層の規則に合わせる。
+    encodeNameList(statusNames),
     from,
     to,
     keyword,
@@ -370,6 +397,7 @@ function handleIssues(ctx: ApiContext, params: ApiParams): IssuesResponse {
         return {
           issues: [],
           truncated: false,
+          noDateTruncated: false,
           requestCount: client.requestCount,
           fetchedAt: new Date(ctx.now()).toISOString()
         }
@@ -392,6 +420,7 @@ function handleIssues(ctx: ApiContext, params: ApiParams): IssuesResponse {
     return {
       issues: result.issues,
       truncated: result.truncated,
+      noDateTruncated: result.noDateTruncated,
       requestCount: client.requestCount,
       fetchedAt: new Date(ctx.now()).toISOString()
     }
@@ -429,10 +458,15 @@ function handleIcons(ctx: ApiContext, params: ApiParams): Record<string, string>
   const contents = authed.client.getBinaryManySettled(missing.map((userId) => ({ path: `/users/${userId}/icon` })))
   for (const [index, content] of contents.entries()) {
     const userId = missing[index]
-    if (content === null) {
-      // 退会済みユーザーなどで取得できない。覚えておかないと毎回取りに行く。
+    if (content instanceof BacklogApiError) {
       ctx.log('アイコンの取得に失敗しました', userId)
-      ctx.cache.writeText('icon', [authed.scope, String(userId)], ICON_UNAVAILABLE, ICON_MISSING_TTL)
+      // 覚えておくのは 404 だけにする。退会済みユーザーのアイコンは 404 になり
+      // 続けるので覚える価値があるが、429 や 5xx は次には取れる。一時的な失敗まで
+      // 覚えると、レート制限に 1 度触れただけで 30 分アイコンが消える。
+      // アイコンはレート制限の区分がとりわけ厳しく、実際に起こりうる。
+      if (content.status === 404) {
+        ctx.cache.writeText('icon', [authed.scope, String(userId)], ICON_UNAVAILABLE, ICON_MISSING_TTL)
+      }
       continue
     }
     const dataUrl = `data:${content.contentType};base64,${content.base64}`

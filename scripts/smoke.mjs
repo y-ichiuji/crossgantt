@@ -72,7 +72,13 @@ const FORBIDDEN_IN_SERVER = [
 const FORBIDDEN_ASYNC_IN_SERVER = [
   { pattern: /\basync\s+function\b/u, name: 'async function' },
   { pattern: /\basync\s*\(/u, name: 'async の関数式' },
-  { pattern: /\bawait\s/u, name: 'await' },
+  // `async run() {}` のようなメソッド短縮記法。`function` も `(` も
+  // 直後に来ないため、上の 2 つはどちらも当たらない。esbuild は
+  // target: es2019 でもこの形をそのまま出すので、ここで止めないと
+  // push は通って実行時に `{}` が返る。
+  { pattern: /\basync\s+[\w$]/u, name: 'async のメソッド短縮記法' },
+  // `await x` だけでなく `await(x)` と `await/re/` も拾う。
+  { pattern: /\bawait[\s(]/u, name: 'await' },
   { pattern: /\bPromise\b/u, name: 'Promise' }
 ]
 
@@ -278,6 +284,19 @@ await check('スタイルが差し込める形になっている', async () => {
   const css = await read('app-css.html')
   assert(css.startsWith('<style>'), 'style タグで包まれていない')
   assert(css.trimEnd().endsWith('</style>'), 'style タグが閉じていない')
+
+  // CSS は `<style>` へそのまま置くため、中身に `<` が 1 文字でもあると
+  // HtmlService の解析でそこから先が作り替えられる。`build-gas.mjs` も
+  // ビルド前の app.css を見て同じことを確かめるが、ここでも出来上がった
+  // 成果物を見ておく。`node scripts/smoke.mjs <ディレクトリ>` を単体で
+  // 走らせたときに素通りしないようにするため。
+  const body = css.slice('<style>'.length, css.lastIndexOf('</style>'))
+  const index = body.indexOf('<')
+  assert(
+    index === -1,
+    `スタイルに < がある（位置 ${index}）: ${body.slice(Math.max(0, index - 30), index + 30)}` +
+      '\n       範囲構文は max-width / min-width で書き換え、SVG は Base64 にすること'
+  )
 })
 
 if (failures > 0) {

@@ -343,6 +343,19 @@ describe('エラーの扱い', () => {
     expect(alert.textContent).toContain('weird_thing')
   })
 
+  it('プロトタイプの名前を理由コードに渡されても画面が消えない', async () => {
+    // 理由コードは `?error=` に書かれた値がそのまま届く。説明の表を素の
+    // オブジェクトで持つと `__proto__` がプロトタイプ側へ届き、文字列でない
+    // 値が描画へ渡る。React は要素でないオブジェクトを子に受け取ると例外を
+    // 投げ、境界が無いため画面ごと消える。共有リンク 1 本で起こせてしまう。
+    installBootstrap({ webAppUrl: WEB_APP_URL, authError: '__proto__' })
+    install(defaultResponder(false))
+
+    render(<App />)
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toContain('__proto__')
+  })
+
   it('OAuth 未設定のままログインしようとしたら理由を出す', async () => {
     installBootstrap({ webAppUrl: WEB_APP_URL, configured: false })
     install(defaultResponder(false))

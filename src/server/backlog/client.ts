@@ -233,15 +233,25 @@ export class BacklogClient {
     })
   }
 
-  /** 画像などのバイナリをまとめて取得し、成否を 1 本ずつ返す。 */
-  getBinaryManySettled(requests: BacklogRequest[]): (BinaryContent | null)[] {
+  /**
+   * 画像などのバイナリをまとめて取得し、成否を 1 本ずつ返す。
+   *
+   * 失敗は `null` ではなく `BacklogApiError` で返す。呼び出し側が状態コードを
+   * 見られないと、404（そもそもアイコンが無い）と 429 や 5xx（いま取れない）を
+   * 区別できず、一時的な失敗まで「無い」として覚えてしまう。
+   */
+  getBinaryManySettled(requests: BacklogRequest[]): (BinaryContent | BacklogApiError)[] {
     if (requests.length === 0) {
       return []
     }
     const settled = this.dispatch(requests, 'image/*', false)
     return settled.results.map((response, index) => {
-      if (settled.failures[index] !== null || response === undefined) {
-        return null
+      const failure = settled.failures[index]
+      if (failure !== null) {
+        return failure
+      }
+      if (response === undefined) {
+        return new BacklogApiError(502, 'Backlog の応答を受け取れませんでした')
       }
       return {
         base64: response.base64(),
@@ -343,10 +353,13 @@ export class BacklogClient {
     }
     const wait = this.retryDelay(response, attempt)
     if (wait === null) {
+      // マスクしてから切る。先に切ると、境界をまたいだトークンが
+      // どちらの側にも丸ごとは現れなくなり、`mask` が拾えない断片として
+      // 詳細に残る。詳細はそのままクライアントへ渡って画面に出る。
       const error = new BacklogApiError(
         response.status,
         describeStatus(response.status),
-        this.mask(response.text().slice(0, 500))
+        this.mask(response.text()).slice(0, 500)
       )
       outcome.failures[index] = error
       outcome.failure ??= error
