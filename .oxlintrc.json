@@ -17,7 +17,7 @@
     "correctness": "error",
     "suspicious": "error",
     "pedantic": "error",
-    "perf": "warn"
+    "perf": "error"
   },
   "env": {
     "browser": true,
@@ -92,7 +92,7 @@
     "typescript/return-await": ["error", "in-try-catch"],
     "typescript/unbound-method": "error",
     "typescript/use-unknown-in-catch-callback-variable": "error",
-    "typescript/no-unnecessary-condition": "warn",
+    "typescript/no-unnecessary-condition": "error",
     "typescript/no-unsafe-type-assertion": "off",
     "typescript/prefer-readonly-parameter-types": "off",
     "typescript/no-confusing-void-expression": "off",

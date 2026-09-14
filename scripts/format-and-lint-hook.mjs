@@ -61,7 +61,14 @@ const GITHUB_WORKFLOW_DIR = '.github/workflows'
  * 1 ファイルに複数の lint が当たることがある（例: ワークフローの YAML は
  * actionlint と cspell の両方）。`command` は node_modules/.bin のコマンド名、
  * `script` はこのリポジトリのスクリプトを指す。
+ *
+ * @typedef {{ appliesTo: (file: string) => boolean, args: (file: string) => string[] }} LinterTarget
+ * @typedef {LinterTarget & { command: string }} CommandLinter
+ * @typedef {LinterTarget & { script: string }} ScriptLinter
+ * @typedef {CommandLinter | ScriptLinter} Linter
  */
+
+/** @type {Linter[]} */
 const LINTERS = [
   {
     appliesTo: (file) => hasExtension(file, ['.ts', '.tsx', '.mts', '.cts', '.js', '.mjs', '.cjs']),
@@ -92,12 +99,21 @@ const LINTERS = [
   }
 ]
 
-/** 拡張子が候補のいずれかと一致するか。 */
+/**
+ * 拡張子が候補のいずれかと一致するか。
+ *
+ * @param {string} file
+ * @param {string[]} extensions
+ */
 function hasExtension(file, extensions) {
   return extensions.includes(path.extname(file).toLowerCase())
 }
 
-/** GitHub Actions のワークフローとして置かれているか。 */
+/**
+ * GitHub Actions のワークフローとして置かれているか。
+ *
+ * @param {string} file
+ */
 function isGithubWorkflow(file) {
   return path.dirname(file).split(path.sep).join('/') === GITHUB_WORKFLOW_DIR
 }
@@ -111,7 +127,18 @@ async function readStdin() {
   return Buffer.concat(chunks).toString('utf8')
 }
 
-/** node_modules/.bin のコマンドを同期実行する。 */
+/**
+ * node_modules/.bin のコマンドを同期実行する。
+ *
+ * 戻り値の `stdout` / `stderr` を nullable にしているのは、@types/node が
+ * encoding 付きで `string` と宣言しているのに対し、コマンドそのものを
+ * 起動できなかった場合は実際には `null` が入るため。
+ *
+ * @param {string} command
+ * @param {string[]} args
+ * @param {string} cwd
+ * @returns {{ status: number | null, stdout: string | null, stderr: string | null }}
+ */
 function run(command, args, cwd) {
   return spawnSync(path.join(cwd, 'node_modules', '.bin', command), args, {
     cwd,
@@ -119,7 +146,14 @@ function run(command, args, cwd) {
   })
 }
 
-/** このリポジトリの Node スクリプトを同期実行する。 */
+/**
+ * このリポジトリの Node スクリプトを同期実行する。
+ *
+ * @param {string} script
+ * @param {string[]} args
+ * @param {string} cwd
+ * @returns {{ status: number | null, stdout: string | null, stderr: string | null }}
+ */
 function runScript(script, args, cwd) {
   return spawnSync(process.execPath, [script, ...args], { cwd, encoding: 'utf8' })
 }
@@ -160,8 +194,9 @@ for (const linter of LINTERS) {
   }
 
   const args = linter.args(relative)
-  const label = linter.command ?? linter.script
-  const result = linter.command ? run(linter.command, args, projectDir) : runScript(linter.script, args, projectDir)
+  const label = 'command' in linter ? linter.command : linter.script
+  const result =
+    'command' in linter ? run(linter.command, args, projectDir) : runScript(linter.script, args, projectDir)
 
   if (result.status !== 0) {
     const output = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim()

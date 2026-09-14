@@ -22,6 +22,7 @@ jobs:
   analyze:
     name: 解析
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       # 検出結果を Security タブへ書き込む。
       security-events: write
@@ -29,6 +30,9 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # 解析の過程で依存を取得するため、GITHUB_TOKEN を .git/config に残さない。
+          persist-credentials: false
 
       - name: 初期化
         uses: github/codeql-action/init@faaca9a8f6edddba5725ffe5adefdab6669a2eca # v3

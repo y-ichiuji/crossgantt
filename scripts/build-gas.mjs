@@ -85,6 +85,8 @@ const GENERATED_NOTE = '// scripts/build-gas.mjs が生成したファイルで�
  * 埋め込む側の文字列を機械的に書き換えると、文字列リテラル以外の場所に
  * 現れた場合に意味を変えてしまう。自分たちのコードで避けられる問題なので、
  * 見つかったらビルドを止める。
+ *
+ * @param {string} css
  */
 function assertEmbeddableCss(css) {
   const index = css.indexOf('<')

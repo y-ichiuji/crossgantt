@@ -72,7 +72,8 @@ export type BinaryContent = {
 
 /** 再試行のループ 1 周ぶんの仕分け結果。 */
 type Outcome = {
-  results: FetchResponse[]
+  /** 要求ごとの応答。失敗した要求の位置は埋まらないため undefined になる。 */
+  results: (FetchResponse | undefined)[]
   /** 要求ごとの、再試行しても直らない失敗。成功していれば null。 */
   failures: (BacklogApiError | null)[]
   retry: number[]
@@ -83,7 +84,8 @@ type Outcome = {
 
 /** 要求ごとに成否が分かれる取得の結果。 */
 type Settled = {
-  results: FetchResponse[]
+  /** 要求ごとの応答。失敗した要求の位置は埋まらないため undefined になる。 */
+  results: (FetchResponse | undefined)[]
   failures: (BacklogApiError | null)[]
 }
 
@@ -388,7 +390,7 @@ export class BacklogClient {
    *   時点で打ち切って投げる。false なら最後まで投げ、成否を要求ごとに返す。
    */
   private dispatch(requests: BacklogRequest[], accept: string, stopOnFailure: boolean): Settled {
-    const results = Array.from({ length: requests.length }) as FetchResponse[]
+    const results: (FetchResponse | undefined)[] = Array.from({ length: requests.length })
     const failures: (BacklogApiError | null)[] = requests.map(() => null)
     let pending = requests.map((_request, index) => index)
 
@@ -440,6 +442,12 @@ export class BacklogClient {
   }
 
   private send(requests: BacklogRequest[], accept: string): FetchResponse[] {
-    return this.dispatch(requests, accept, true).results
+    // 失敗を 1 本でも受けた時点で投げているので、ここでは全ての位置が埋まっている。
+    return this.dispatch(requests, accept, true).results.map((response) => {
+      if (response === undefined) {
+        throw new BacklogApiError(502, 'Backlog の応答を受け取れませんでした')
+      }
+      return response
+    })
   }
 }

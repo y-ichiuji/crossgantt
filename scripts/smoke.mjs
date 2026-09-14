@@ -15,6 +15,10 @@ const dir = process.argv[2] ?? 'gas-dist'
 
 let failures = 0
 
+/**
+ * @param {string} name
+ * @param {() => Promise<void>} fn
+ */
 async function check(name, fn) {
   try {
     await fn()
@@ -26,12 +30,18 @@ async function check(name, fn) {
   }
 }
 
+/**
+ * @param {unknown} condition
+ * @param {string} message
+ * @returns {asserts condition}
+ */
 function assert(condition, message) {
   if (!condition) {
     throw new Error(message)
   }
 }
 
+/** @param {string} name */
 function read(name) {
   return readFile(path.join(dir, name), 'utf8')
 }
@@ -208,6 +218,7 @@ await check('画面のテンプレートが成り立っている', async () => {
  * 自分たちが書く小さなテンプレートだけを相手にするので、真面目な HTML
  * パーサは要らない。開始と終了の目印をそのまま文字列として探すだけで足りる。
  */
+/** @param {string} html */
 function stripScriptlets(html) {
   let result = ''
   let cursor = 0
@@ -229,6 +240,7 @@ function stripScriptlets(html) {
 }
 
 /** `<script ...>...</script>`（大小文字・閉じタグ内の空白を問わない）の中身を列挙する。 */
+/** @param {string} html */
 function scriptBodies(html) {
   const bodies = []
   let cursor = 0

@@ -28,6 +28,7 @@ jobs:
   gate:
     name: CI と CodeQL の成功を確認
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       # 他のワークフローの実行結果を読むために必要。
       actions: read
@@ -100,6 +101,9 @@ jobs:
     needs: gate
     if: needs.gate.outputs.proceed == 'true'
     runs-on: ubuntu-latest
+    # clasp が応答を返さないまま止まると、concurrency group を
+    # 既定の 360 分ぶん占有して後続のデプロイまで止まる。
+    timeout-minutes: 15
     environment:
       name: production
     steps:
@@ -107,6 +111,9 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           ref: ${{ needs.gate.outputs.sha }}
+          # clasp の認証情報と同じジョブで動くため、GITHUB_TOKEN を
+          # .git/config に残さない。
+          persist-credentials: false
 
       - name: corepack を有効化
         run: corepack enable
