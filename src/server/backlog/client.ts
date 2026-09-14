@@ -212,23 +212,32 @@ export class BacklogClient {
   /**
    * JSON を複数まとめて取得し、成否を 1 本ずつ返す。
    *
-   * 取得できなかったものは null になる。退会済みユーザーや参加から外された
-   * プロジェクトのように、一部が 404 になっても残りは使える場面で使う。
-   * まとめて投げている都合で 1 本の失敗が他を巻き添えにすることを防ぐ。
+   * 退会済みユーザーや参加から外されたプロジェクトのように、一部が 404 に
+   * なっても残りは使える場面で使う。まとめて投げている都合で 1 本の失敗が
+   * 他を巻き添えにすることを防ぐ。
+   *
+   * 失敗は `null` ではなく `BacklogApiError` で返す。呼び出し側が状態コードを
+   * 見られないと、403 や 404（そのプロジェクトを参照できない）と 429 や 5xx
+   * （いま取れない）を区別できず、一時的な失敗まで確定した結果として扱って
+   * しまう。`getBinaryManySettled` と同じ理由である。
    */
-  getManySettled<T>(requests: BacklogRequest[]): (T | null)[] {
+  getManySettled<T>(requests: BacklogRequest[]): (T | BacklogApiError)[] {
     if (requests.length === 0) {
       return []
     }
     const settled = this.dispatch(requests, 'application/json', false)
     return settled.results.map((response, index) => {
-      if (settled.failures[index] !== null || response === undefined) {
-        return null
+      const failure = settled.failures[index]
+      if (failure !== null) {
+        return failure
+      }
+      if (response === undefined) {
+        return new BacklogApiError(502, 'Backlog の応答を受け取れませんでした')
       }
       try {
         return JSON.parse(response.text()) as T
       } catch {
-        return null
+        return new BacklogApiError(502, 'Backlog の応答を解釈できませんでした')
       }
     })
   }

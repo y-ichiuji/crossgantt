@@ -261,6 +261,34 @@ describe('fetchGanttIssues', () => {
     expect(stub.requests.length % 3).toBe(0)
   })
 
+  it('URL に収まるかは、いちばん長いプロジェクト ID を基準に判定する', () => {
+    // プロジェクトの並びは名前順なので、先頭の ID の桁数はたまたま決まる。
+    // 先頭を基準にすると、桁の多い ID が単独の組になったときだけ上限を超え、
+    // UrlFetchApp が実行時に落ちる。分けようが無い 1 件の組は作り直せないため、
+    // 条件を緩める側の判定で最長の ID を見ておく必要がある。
+    const respond = (url: URL) => (url.pathname.endsWith('/issues/count') ? { count: 1 } : [])
+    const shortId = 1
+    const longId = 999_999_999
+
+    // 最長の ID 1 件で上限をちょうど 1 文字超えるキーワードの長さを測る。
+    // キーワード自体が `&keyword=` ごと長さに効くため、1 文字入れた状態を基準にする。
+    const probe = createClient(respond)
+    fetchGanttIssues(probe.client, {}, params({ projectIds: [longId], keyword: 'a' }))
+    const longest = Math.max(
+      ...probe.stub.requests.filter((request) => !request.url.includes('/count')).map((request) => request.url.length)
+    )
+
+    const { stub, client } = createClient(respond)
+    // 最長の ID なら 1 文字だけ超え、先頭の短い ID なら桁数の差だけ余裕があるように
+    // 見えるキーワード。基準を間違えると、緩めずに進んで単独の組が上限を超える。
+    const keyword = 'a'.repeat(1 + MAX_URL_LENGTH + 1 - longest)
+
+    expect(() => fetchGanttIssues(client, {}, params({ projectIds: [shortId, longId], keyword }))).toThrow(
+      expect.objectContaining({ name: 'ApiFailure', status: 400 })
+    )
+    expect(stub.requests).toHaveLength(0)
+  })
+
   it('分けて問い合わせても課題は ID でマージする', () => {
     const { client } = createClient((url) => {
       if (url.pathname.endsWith('/issues/count')) {

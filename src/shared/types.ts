@@ -116,7 +116,6 @@ export type IssuesResponse = {
   fetchedAt: string
 }
 
-/** API エラーレスポンスの本文。 */
 /** 祝日 1 日分。 */
 export type Holiday = {
   /** yyyy-MM-dd */
@@ -124,6 +123,7 @@ export type Holiday = {
   name: string
 }
 
+/** API エラーレスポンスの本文。 */
 export type ApiErrorBody = {
   error: string
   detail?: string

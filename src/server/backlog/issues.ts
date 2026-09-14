@@ -140,6 +140,10 @@ function fitsUrl(space: string, base: QueryParams, dateQueries: QueryParams[], p
  * URL が上限に収まるよう、プロジェクト ID をいくつかの組に分ける。
  *
  * 分けた組ごとに同じ条件で問い合わせ、結果は課題 ID でマージする。
+ *
+ * 1 件だけの組が収まるかは検査しない。それ以上分けようが無いため、収まらない
+ * 場合にできることが無いからである。代わりに `relaxFilters` がいちばん長い
+ * プロジェクト ID を基準に条件を緩め、単独なら必ず収まる状態にしてから呼ぶ。
  */
 function splitProjectIds(space: string, base: QueryParams, dateQueries: QueryParams[], projectIds: number[]) {
   const groups: number[][] = []
@@ -177,8 +181,19 @@ type QueryPlan = {
  * URL に収まらない条件を、サーバー側の絞り込みから外す。
  *
  * 課題の応答には担当者 ID とステータス ID が含まれるため、取得後に同じ条件で
- * 絞れば結果は変わらない。増えるのは取得量だけである。外す順は列挙が長い側から。
- * プロジェクトを 1 つに絞った状態を基準に判定する。
+ * 絞り直せる。外す順は列挙が長い側から。
+ *
+ * 判定の基準は「いちばん長いプロジェクト ID 1 つだけの URL」である。`splitProjectIds`
+ * は 1 件だけの組の長さを検査しないため、ここで最長の 1 件が収まるところまで緩めて
+ * おかないと、桁の多い ID のプロジェクトだけが単独の組になったときに上限を超える。
+ * 先頭の ID を基準にすると、`fetchProjects` が名前順に並べている都合で桁数は
+ * たまたま決まることになり、余白がわずかな場合に取りこぼす。
+ *
+ * ただし取得量は増える。Backlog 側で絞らない分、`/issues/count` が返す件数も
+ * ページ数も条件に合わない課題を含むため、`MAX_PAGES_PER_QUERY` の打ち切りに
+ * 早く届く。打ち切られた場合、条件に合う課題が取得できた範囲（期限日の昇順で
+ * 先頭 2,500 件）の外に落ちることがある。そのときは `truncated` が立つので
+ * 画面には「一部のみ表示」と出るが、絞り込み条件そのものが弱まるわけではない。
  */
 function relaxFilters(
   space: string,
@@ -188,7 +203,8 @@ function relaxFilters(
   let assigneeIds = params.assigneeIds
   let statusIds = params.statusIds
   const local = { localAssigneeIds: [] as number[], localStatusIds: [] as number[] }
-  const single = params.projectIds.slice(0, 1)
+  // ID は正の整数なので、値がいちばん大きいものが 10 進表記でもいちばん長い。
+  const single = params.projectIds.length === 0 ? [] : [params.projectIds.reduce((a, b) => (a > b ? a : b))]
 
   while (!fitsUrl(space, baseParams(params, assigneeIds, statusIds), dateQueries, single)) {
     if (statusIds.length > 0 && statusIds.length >= assigneeIds.length) {
