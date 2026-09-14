@@ -271,10 +271,13 @@
   composes: badgeOverdue from '../styles/controls.module.css';
 }
 
+/* 行ヘッダーの残り幅いっぱいに広げ、末尾のステータスバッジを右端へ寄せる。 */
 .issueLink {
   display: flex;
   align-items: baseline;
   gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-decoration: none;
 }
@@ -294,6 +297,30 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/*
+ * 件名の末尾に出すステータス。
+ *
+ * `flex: none` で件名より先に幅を確保し、`margin-left: auto` で右端へ寄せる。
+ * どの行でも同じ位置に出るので、縦に目で追ってステータスを読み比べられる。
+ * 幅を使い切るのは件名の側で、長い件名は `…` で省略される。
+ *
+ * `align-self` を指定するのは、`overflow` が `visible` 以外のインラインブロックは
+ * 下マージン端がベースラインになるため。`.issueLink` の `align-items: baseline`
+ * のままだと、省略のための `overflow: hidden` を付けた途端にバッジだけ浮き上がる。
+ */
+.issueStatus {
+  composes: badge from '../styles/controls.module.css';
+  flex: none;
+  align-self: center;
+  margin-left: auto;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* 淡いステータス色でも背景から浮くように縁取る。バーと同じ扱い。 */
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
 }
 
 .bar {

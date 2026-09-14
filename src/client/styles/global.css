@@ -31,7 +31,8 @@
   --radius-lg: 10px;
 
   --control-height: 30px;
-  --row-head-width: 380px;
+  /* 課題キー・件名・ステータスバッジが並ぶ左カラムの幅。 */
+  --row-head-width: 480px;
   --row-height: 28px;
   --avatar-size: 18px;
   --gantt-header-height: 46px;

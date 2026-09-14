@@ -293,6 +293,22 @@ function IssueRow({
         <a className={styles.issueLink} href={issue.url} target="_blank" rel="noreferrer" title={label}>
           <span className={styles.issueKey}>{issue.issueKey}</span>
           <span className={styles.issueSummary}>{issue.summary}</span>
+          {/*
+           * バーと同じ色を使う。左カラムとタイムラインのどちらを見ても
+           * 同じ色でステータスを追えるようにするため。
+           *
+           * `title` はこの span にも付ける。バッジは幅を切り詰めて `…` で省略するため、
+           * 無いと親の `<a>` の `title`（課題キーと件名）が出てしまい、
+           * 省略されたステータス名を読む手段が無くなる。
+           */}
+          <span
+            className={styles.issueStatus}
+            data-testid="issue-status"
+            title={issue.statusName}
+            style={{ backgroundColor: background, color: foreground }}
+          >
+            {issue.statusName}
+          </span>
         </a>
       </div>
       <div className={styles.rowTrack}>
