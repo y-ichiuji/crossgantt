@@ -302,7 +302,8 @@ export function normalizeIssue(space: string, projectKeys: Record<number, string
     estimatedHours: issue.estimatedHours ?? null,
     actualHours: issue.actualHours ?? null,
     parentIssueId: issue.parentIssueId ?? null,
-    milestoneNames: (issue.milestone ?? []).map((version) => version.name)
+    milestoneNames: (issue.milestone ?? []).map((version) => version.name),
+    categoryNames: (issue.category ?? []).map((category) => category.name)
   }
 }
 

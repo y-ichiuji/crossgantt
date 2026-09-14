@@ -485,7 +485,7 @@ describe('初期表示条件の復元', () => {
     })
     expect(callsTo('issues')[0].params.projectIds).toBe('200')
 
-    expect((screen.getByLabelText('グルーピング') as unknown as HTMLSelectElement).value).toBe('project')
+    expect((screen.getByLabelText('大項目') as unknown as HTMLSelectElement).value).toBe('project')
     expect(screen.getByRole('button', { name: '日' }).getAttribute('aria-pressed')).toBe('true')
   })
 })

@@ -70,10 +70,49 @@ describe('FilterBar', () => {
     expect(onChange).toHaveBeenCalledWith({ to: '2026-11-30' })
   })
 
-  it('グルーピングの変更を通知する', async () => {
+  it('大項目の変更を通知する', async () => {
     const { onChange, user } = setup()
-    await user.selectOptions(screen.getByLabelText('グルーピング'), 'project')
-    expect(onChange).toHaveBeenCalledWith({ groupBy: 'project' })
+    await user.selectOptions(screen.getByLabelText('大項目'), 'assignee')
+    expect(onChange).toHaveBeenCalledWith({ groupBy: ['assignee'] })
+  })
+
+  it('中項目を選ぶと 2 段になる', async () => {
+    const { onChange, user } = setup()
+    await user.selectOptions(screen.getByLabelText('中項目'), 'category')
+    expect(onChange).toHaveBeenCalledWith({ groupBy: ['project', 'category'] })
+  })
+
+  it('大項目には「なし」を出さない', () => {
+    setup()
+    const options = screen.getByLabelText('大項目').querySelectorAll('option')
+    expect([...options].map((option) => option.textContent)).not.toContain('なし')
+  })
+
+  it('上の段で使った軸は下の段の選択肢に出さない', () => {
+    setup({ filter: { ...defaultFilter(NOW), groupBy: ['project'] } })
+    const options = screen.getByLabelText('中項目').querySelectorAll('option')
+    expect([...options].map((option) => option.textContent)).not.toContain('プロジェクト別')
+  })
+
+  it('中項目が未選択なら小項目は操作できない', () => {
+    setup({ filter: { ...defaultFilter(NOW), groupBy: ['project'] } })
+    expect((screen.getByLabelText('小項目') as HTMLSelectElement).disabled).toBe(true)
+  })
+
+  it('中項目を「なし」にすると小項目もまとめて落ちる', async () => {
+    const { onChange, user } = setup({
+      filter: { ...defaultFilter(NOW), groupBy: ['project', 'category', 'assignee'] }
+    })
+    await user.selectOptions(screen.getByLabelText('中項目'), '')
+    expect(onChange).toHaveBeenCalledWith({ groupBy: ['project'] })
+  })
+
+  it('下の段で使っていた軸を上の段に選ぶと下からは外れる', async () => {
+    const { onChange, user } = setup({
+      filter: { ...defaultFilter(NOW), groupBy: ['project', 'category', 'assignee'] }
+    })
+    await user.selectOptions(screen.getByLabelText('大項目'), 'category')
+    expect(onChange).toHaveBeenCalledWith({ groupBy: ['category', 'assignee'] })
   })
 
   it('ズームの変更を通知する', async () => {

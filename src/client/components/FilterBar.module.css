@@ -39,6 +39,37 @@
   white-space: nowrap;
 }
 
+/*
+ * グルーピングは「大項目・中項目・小項目」の 3 つで 1 つの設定なので、
+ * fieldset でまとめる。枠と余白を消して他のフィールドと高さを揃える。
+ */
+.groupField {
+  border: none;
+  margin: 0;
+  padding: 0;
+  min-inline-size: auto;
+}
+
+.groupLegend {
+  composes: fieldLabel from '../styles/controls.module.css';
+  padding: 0;
+}
+
+.groupSlots {
+  display: flex;
+  gap: 6px;
+}
+
+.groupSlot {
+  composes: field;
+}
+
+/* 3 つ並ぶため、ツールバーの他の項目を押し出さない幅に収める。 */
+.groupSelect {
+  composes: select;
+  min-width: 7.5em;
+}
+
 /* fieldset の既定の枠と余白を消して、他のフィールドと揃える。 */
 .zoomField {
   border: none;

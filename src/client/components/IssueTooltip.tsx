@@ -48,6 +48,12 @@ export function IssueTooltip({ state }: { state: TooltipState }) {
         <dd>
           予定 {issue.estimatedHours ?? '—'} / 実績 {issue.actualHours ?? '—'}
         </dd>
+        {issue.categoryNames.length > 0 ? (
+          <>
+            <dt>カテゴリ</dt>
+            <dd>{issue.categoryNames.join(', ')}</dd>
+          </>
+        ) : null}
         {issue.milestoneNames.length > 0 ? (
           <>
             <dt>マイルストーン</dt>
