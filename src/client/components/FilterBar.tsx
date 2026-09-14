@@ -1,3 +1,5 @@
+// 型としてだけ参照する（段数の照合に使う）ので、実行時の import は増やさない。
+import type { MAX_GROUP_DEPTH } from '../../shared/filter'
 import { projectColor } from '../../shared/gantt'
 import type { GroupBy, MemberSummary, ProjectSummary, StatusGroup, ViewFilter, Zoom } from '../../shared/types'
 import { MultiSelect } from './MultiSelect'
@@ -16,13 +18,44 @@ type Props = {
 const GROUP_LABELS: Record<GroupBy, string> = {
   assignee: '担当者別',
   project: 'プロジェクト別',
-  milestone: 'マイルストーン別'
+  milestone: 'マイルストーン別',
+  category: 'カテゴリ別'
 }
+
+/**
+ * グルーピングの段ごとの見出し。
+ *
+ * 段数の上限は `shared/filter.ts` が決めるため、要素数をその値に固定する。
+ * 片方だけ変えると、select の数と実際に指定できる段数が静かに食い違う。
+ * `satisfies` で長さを照合しておけば、ずれたまま通ることはない。
+ */
+const GROUP_SLOT_LABELS = ['大項目', '中項目', '小項目'] as const satisfies {
+  length: typeof MAX_GROUP_DEPTH
+}
+
+/** 「なし」を表す select の値。`GroupBy` には無い値を使う。 */
+const NO_AXIS = ''
 
 const ZOOM_LABELS: Record<Zoom, string> = {
   day: '日',
   week: '週',
   month: '月'
+}
+
+/**
+ * 指定した段の軸を差し替えた並びを返す。
+ *
+ * 「なし」を選んだら、その段から下をまとめて落とす。階層なので、中項目を
+ * 空けたまま小項目だけ残すという状態は作らない。
+ *
+ * 下の段で使っていた軸を選んだ場合は、その軸を下から取り除く。同じ軸が
+ * 2 段に並ぶと、下の段は必ず 1 グループだけになり見出しが増えるだけになる。
+ */
+function replaceAxis(axes: GroupBy[], depth: number, axis: GroupBy | typeof NO_AXIS): GroupBy[] {
+  if (axis === NO_AXIS) {
+    return axes.slice(0, depth)
+  }
+  return [...axes.slice(0, depth), axis, ...axes.slice(depth + 1).filter((value) => value !== axis)]
 }
 
 /** 表示条件を操作するツールバー。 */
@@ -85,20 +118,41 @@ export function FilterBar({ filter, onChange, projects, members, statuses, loadi
         />
       </label>
 
-      <label className={styles.field}>
-        <span className={styles.label}>グルーピング</span>
-        <select
-          className={styles.select}
-          value={filter.groupBy}
-          onChange={(event) => onChange({ groupBy: event.target.value as GroupBy })}
-        >
-          {(Object.keys(GROUP_LABELS) as GroupBy[]).map((value) => (
-            <option key={value} value={value}>
-              {GROUP_LABELS[value]}
-            </option>
-          ))}
-        </select>
-      </label>
+      <fieldset className={styles.groupField}>
+        <legend className={styles.groupLegend}>グルーピング</legend>
+        <div className={styles.groupSlots}>
+          {GROUP_SLOT_LABELS.map((slotLabel, depth) => {
+            // 上の段で使った軸は選べないようにする。1 つ上が「なし」の段も
+            // 選べない（中項目を空けたまま小項目だけ置くことはできない）。
+            const used = new Set(filter.groupBy.slice(0, depth))
+            return (
+              <label key={slotLabel} className={styles.groupSlot}>
+                <span className={styles.label}>{slotLabel}</span>
+                <select
+                  className={styles.groupSelect}
+                  value={filter.groupBy[depth] ?? NO_AXIS}
+                  disabled={depth > filter.groupBy.length}
+                  onChange={(event) =>
+                    onChange({
+                      groupBy: replaceAxis(filter.groupBy, depth, event.target.value as GroupBy | typeof NO_AXIS)
+                    })
+                  }
+                >
+                  {/* 大項目は必ず 1 つ要る。ここを空にすると 1 行も描けない。 */}
+                  {depth > 0 ? <option value={NO_AXIS}>なし</option> : null}
+                  {(Object.keys(GROUP_LABELS) as GroupBy[])
+                    .filter((value) => !used.has(value))
+                    .map((value) => (
+                      <option key={value} value={value}>
+                        {GROUP_LABELS[value]}
+                      </option>
+                    ))}
+                </select>
+              </label>
+            )
+          })}
+        </div>
+      </fieldset>
 
       <fieldset className={styles.zoomField}>
         <legend className={styles.zoomLabel}>ズーム</legend>

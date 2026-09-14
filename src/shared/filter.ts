@@ -11,8 +11,19 @@
 import { addDays, addMonths, diffDays, endOfMonth, isDateKey, startOfMonth, todayKey } from './date'
 import type { GroupBy, ViewFilter, Zoom } from './types'
 
-const GROUP_BY_VALUES: GroupBy[] = ['assignee', 'project', 'milestone']
+const GROUP_BY_VALUES = new Set<GroupBy>(['assignee', 'project', 'milestone', 'category'])
 const ZOOM_VALUES: Zoom[] = ['day', 'week', 'month']
+
+/**
+ * グルーピング軸の最大段数（大項目・中項目・小項目）。
+ *
+ * 深くするほど見出し行が増えて課題そのものが見えなくなるため、
+ * 画面として意味のあるところで止める。
+ */
+export const MAX_GROUP_DEPTH = 3
+
+/** グルーピング軸を 1 つも指定しなかった場合の既定。 */
+const DEFAULT_GROUP_BY: GroupBy[] = ['project']
 
 /**
  * 表示期間の最大日数（両端を含む）。
@@ -48,7 +59,7 @@ export function defaultFilter(now: number = Date.now()): ViewFilter {
     from,
     to,
     keyword: '',
-    groupBy: 'project',
+    groupBy: [...DEFAULT_GROUP_BY],
     zoom: 'day',
     includeClosed: false,
     includeNoDate: false
@@ -155,6 +166,33 @@ function parseEnum<T extends string>(value: string | undefined, allowed: T[], fa
 }
 
 /**
+ * カンマ区切りのグルーピング軸を解釈する。
+ *
+ * 単一の軸しか持たなかった頃の `group=project` も 1 段として読めるため、
+ * 共有済みの URL と保存済みの表示条件はそのまま使い続けられる。
+ *
+ * 知らない軸・重複・上限を超えた段は落とす。同じ軸で 2 段に分けても
+ * 下の段は必ず 1 グループだけになり、見出しが増えるだけで意味がない。
+ * 1 つも残らなければ既定へ戻す（軸が空だと 1 行も描けなくなるため）。
+ */
+function parseGroupBy(value: string | null | undefined, fallback: GroupBy[] = DEFAULT_GROUP_BY): GroupBy[] {
+  if (!value) {
+    return [...fallback]
+  }
+  const axes: GroupBy[] = []
+  for (const part of value.split(',')) {
+    const axis = part.trim() as GroupBy
+    if (GROUP_BY_VALUES.has(axis) && !axes.includes(axis)) {
+      axes.push(axis)
+    }
+    if (axes.length === MAX_GROUP_DEPTH) {
+      break
+    }
+  }
+  return axes.length > 0 ? axes : [...fallback]
+}
+
+/**
  * クエリ文字列をキーと値へ分解する。値は百分率記法のまま返す。
  *
  * 復号は項目ごとの解釈に任せる。同じキーが複数あれば最初の 1 つを採る。
@@ -211,7 +249,7 @@ export function parseFilter(query: string, now: number = Date.now()): ViewFilter
     from,
     to,
     keyword: decoded('keyword')?.trim() ?? '',
-    groupBy: parseEnum(decoded('group'), GROUP_BY_VALUES, base.groupBy),
+    groupBy: parseGroupBy(decoded('group'), base.groupBy),
     zoom: parseEnum(decoded('zoom'), ZOOM_VALUES, base.zoom),
     includeClosed: parseBool(decoded('closed'), base.includeClosed),
     includeNoDate: parseBool(decoded('nodate'), base.includeNoDate)
@@ -246,8 +284,9 @@ export function filterToQuery(filter: ViewFilter, now: number = Date.now()): str
   if (filter.keyword) {
     set('keyword', filter.keyword)
   }
-  if (filter.groupBy !== base.groupBy) {
-    set('group', filter.groupBy)
+  // 軸の名前は英小文字だけなので、ID の一覧と同じく符号化しない。
+  if (filter.groupBy.join(',') !== base.groupBy.join(',')) {
+    parts.push(`group=${filter.groupBy.join(',')}`)
   }
   if (filter.zoom !== base.zoom) {
     set('zoom', filter.zoom)

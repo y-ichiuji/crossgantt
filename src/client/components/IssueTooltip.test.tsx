@@ -69,6 +69,16 @@ describe('IssueTooltip', () => {
     expect(screen.getByText('予定 — / 実績 —')).toBeDefined()
   })
 
+  it('カテゴリがあれば列挙する', () => {
+    render(<IssueTooltip state={state({ issue: makeIssue({ categoryNames: ['設計', '実装'] }) })} />)
+    expect(screen.getByText('設計, 実装')).toBeDefined()
+  })
+
+  it('カテゴリが無ければ行ごと出さない', () => {
+    render(<IssueTooltip state={state({ issue: makeIssue({ categoryNames: [] }) })} />)
+    expect(screen.queryByText('カテゴリ')).toBeNull()
+  })
+
   it('マイルストーンがあれば列挙する', () => {
     render(<IssueTooltip state={state({ issue: makeIssue({ milestoneNames: ['v1.0', 'v1.1'] }) })} />)
     expect(screen.getByText('v1.0, v1.1')).toBeDefined()

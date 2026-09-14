@@ -1,14 +1,22 @@
 import { describe, expect, it } from 'vitest'
 
 import { diffDays } from './date'
-import { clampRange, defaultFilter, defaultRange, filterToQuery, MAX_RANGE_DAYS, parseFilter } from './filter'
+import {
+  clampRange,
+  defaultFilter,
+  defaultRange,
+  filterToQuery,
+  MAX_GROUP_DEPTH,
+  MAX_RANGE_DAYS,
+  parseFilter
+} from './filter'
 
 const NOW = Date.parse('2026-09-10T03:00:00Z')
 
 describe('defaultFilter', () => {
   it('既定はプロジェクト別・日ズーム', () => {
     const filter = defaultFilter(NOW)
-    expect(filter.groupBy).toBe('project')
+    expect(filter.groupBy).toEqual(['project'])
     expect(filter.zoom).toBe('day')
   })
 
@@ -55,8 +63,24 @@ describe('parseFilter', () => {
 
   it('不正な列挙値は既定値になる', () => {
     const filter = parseFilter('group=unknown&zoom=year', NOW)
-    expect(filter.groupBy).toBe('project')
+    expect(filter.groupBy).toEqual(['project'])
     expect(filter.zoom).toBe('day')
+  })
+
+  it('グルーピング軸をカンマ区切りで読む', () => {
+    expect(parseFilter('group=project,category,assignee', NOW).groupBy).toEqual(['project', 'category', 'assignee'])
+  })
+
+  it('軸が 1 つだけの古い共有 URL もそのまま読める', () => {
+    expect(parseFilter('group=milestone', NOW).groupBy).toEqual(['milestone'])
+  })
+
+  it('知らない軸と重複した軸は落とす', () => {
+    expect(parseFilter('group=unknown,project,project,category', NOW).groupBy).toEqual(['project', 'category'])
+  })
+
+  it('段数の上限を超えた分は捨てる', () => {
+    expect(parseFilter('group=project,category,assignee,milestone', NOW).groupBy).toHaveLength(MAX_GROUP_DEPTH)
   })
 
   it('真偽値を読む', () => {
@@ -101,6 +125,15 @@ describe('filterToQuery', () => {
     expect(parseFilter(query, oneMonthLater).to).toBe(base.to)
   })
 
+  it('既定と同じグルーピングは書き出さない', () => {
+    expect(filterToQuery(defaultFilter(NOW), NOW)).not.toContain('group=')
+  })
+
+  it('グルーピング軸はカンマ区切りで書き出す', () => {
+    const filter = { ...defaultFilter(NOW), groupBy: ['project' as const, 'category' as const] }
+    expect(filterToQuery(filter, NOW)).toContain('group=project,category')
+  })
+
   it('往復しても内容が保たれる', () => {
     const filter = {
       ...defaultFilter(NOW),
@@ -110,7 +143,7 @@ describe('filterToQuery', () => {
       from: '2026-10-01',
       to: '2026-11-30',
       keyword: 'API',
-      groupBy: 'project' as const,
+      groupBy: ['project' as const],
       zoom: 'day' as const,
       includeClosed: true,
       includeNoDate: true

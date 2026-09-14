@@ -56,6 +56,17 @@ const MASTER_TTL = 30 * 60
 const ISSUES_TTL = 3 * 60
 
 /**
+ * 課題のキャッシュに載せる形式の版。
+ *
+ * `GanttIssue` に項目を足すと、デプロイ直後は前の版で書かれた内容が
+ * TTL のあいだ返り続ける。項目が欠けたまま描画へ渡ると、その項目を
+ * 前提にしたコードが実行時に落ちる（サーバーは成功しているので
+ * 原因が分かりにくい）。版をキーに混ぜて、古い内容は引かないようにする。
+ * `GanttIssue` の形を変えたら必ずこの値を上げること。
+ */
+const ISSUES_SCHEMA_VERSION = '2'
+
+/**
  * アイコン画像のキャッシュ秒数。
  *
  * ユーザーのアイコンは頻繁には変わらないため、CacheService の上限
@@ -370,6 +381,7 @@ function handleIssues(ctx: ApiContext, params: ApiParams): IssuesResponse {
   const projectIds = projects.map((project) => project.id)
 
   const cacheKeyParts = [
+    ISSUES_SCHEMA_VERSION,
     authed.scope,
     projectIds.join(','),
     assigneeIds.join(','),

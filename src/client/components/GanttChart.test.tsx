@@ -131,7 +131,7 @@ describe('バーの描画', () => {
 
 describe('グルーピング', () => {
   it('担当者別にまとめて件数を出す', () => {
-    setup([makeIssue(), OTHER_ISSUE], { groupBy: 'assignee' })
+    setup([makeIssue(), OTHER_ISSUE], { groupBy: ['assignee'] })
     expect(screen.getByRole('button', { name: /山田太郎/u })).toBeDefined()
     expect(screen.getByRole('button', { name: /佐藤花子/u })).toBeDefined()
   })
@@ -143,39 +143,39 @@ describe('グルーピング', () => {
   })
 
   it('プロジェクト別にまとめる', () => {
-    setup([makeIssue(), OTHER_ISSUE], { groupBy: 'project' })
+    setup([makeIssue(), OTHER_ISSUE], { groupBy: ['project'] })
     expect(screen.getByRole('button', { name: /PJA プロジェクトA/u })).toBeDefined()
     expect(screen.getByRole('button', { name: /PJB プロジェクトB/u })).toBeDefined()
   })
 
   it('マイルストーン別にまとめる', () => {
     setup([makeIssue({ milestoneNames: ['v1.0'] }), makeIssue({ id: 3, milestoneNames: [] })], {
-      groupBy: 'milestone'
+      groupBy: ['milestone']
     })
     expect(screen.getByRole('button', { name: /v1\.0/u })).toBeDefined()
     expect(screen.getByRole('button', { name: /マイルストーンなし/u })).toBeDefined()
   })
 
   it('遅延件数をバッジで示す', () => {
-    setup([makeIssue({ dueDate: '2026-09-05' })], { groupBy: 'assignee' })
+    setup([makeIssue({ dueDate: '2026-09-05' })], { groupBy: ['assignee'] })
     const group = screen.getByRole('button', { name: /山田太郎/u })
     expect(within(group).getByText('1件遅延')).toBeDefined()
   })
 
   it('担当者別のときは見出しにアイコンを出す', () => {
-    setup([makeIssue()], { groupBy: 'assignee' })
+    setup([makeIssue()], { groupBy: ['assignee'] })
     const group = screen.getByRole('button', { name: /山田太郎/u })
     expect(within(group).getByTitle('山田太郎')).toBeDefined()
   })
 
   it('プロジェクト別のときは見出しにアイコンを出さない', () => {
-    setup([makeIssue()], { groupBy: 'project' })
+    setup([makeIssue()], { groupBy: ['project'] })
     const group = screen.getByRole('button', { name: /PJA/u })
     expect(group.querySelector('img')).toBeNull()
   })
 
   it('グループを折りたたむと課題行が消える', async () => {
-    const { user } = setup([makeIssue()], { groupBy: 'assignee' })
+    const { user } = setup([makeIssue()], { groupBy: ['assignee'] })
     expect(document.querySelectorAll('[data-testid="gantt-bar"]')).toHaveLength(1)
 
     await user.click(screen.getByRole('button', { name: /山田太郎/u }))
@@ -183,10 +183,62 @@ describe('グルーピング', () => {
   })
 
   it('もう一度押すと開く', async () => {
-    const { user } = setup([makeIssue()], { groupBy: 'assignee' })
+    const { user } = setup([makeIssue()], { groupBy: ['assignee'] })
     const toggle = screen.getByRole('button', { name: /山田太郎/u })
     await user.click(toggle)
     await user.click(toggle)
+    expect(document.querySelectorAll('[data-testid="gantt-bar"]')).toHaveLength(1)
+  })
+
+  it('カテゴリ別にまとめる', () => {
+    setup([makeIssue({ categoryNames: ['設計'] }), makeIssue({ id: 3, categoryNames: [] })], {
+      groupBy: ['category']
+    })
+    expect(screen.getByRole('button', { name: /設計/u })).toBeDefined()
+    expect(screen.getByRole('button', { name: /カテゴリなし/u })).toBeDefined()
+  })
+})
+
+describe('多段のグルーピング', () => {
+  const issues = [makeIssue({ categoryNames: ['設計'] }), { ...OTHER_ISSUE, categoryNames: ['実装'] }]
+
+  it('大項目と中項目の見出しを両方出す', () => {
+    setup(issues, { groupBy: ['project', 'category'] })
+    expect(screen.getByRole('button', { name: /PJA プロジェクトA/u })).toBeDefined()
+    expect(screen.getByRole('button', { name: /設計/u })).toBeDefined()
+    expect(screen.getByRole('button', { name: /PJB プロジェクトB/u })).toBeDefined()
+    expect(screen.getByRole('button', { name: /実装/u })).toBeDefined()
+  })
+
+  it('段の深さを data 属性で示す', () => {
+    setup(issues, { groupBy: ['project', 'category'] })
+    const depths = [...document.querySelectorAll('[data-depth]')].map((row) => row.getAttribute('data-depth'))
+    expect(new Set(depths)).toEqual(new Set(['0', '1']))
+  })
+
+  it('大項目を折りたたむと中項目の見出しごと消える', async () => {
+    const { user } = setup(issues, { groupBy: ['project', 'category'] })
+    await user.click(screen.getByRole('button', { name: /PJA プロジェクトA/u }))
+    expect(screen.queryByRole('button', { name: /設計/u })).toBeNull()
+    // 畳んでいない大項目の側は影響を受けない。
+    expect(screen.getByRole('button', { name: /実装/u })).toBeDefined()
+  })
+
+  it('中項目だけを折りたたむと課題行だけが消える', async () => {
+    const { user } = setup(issues, { groupBy: ['project', 'category'] })
+    expect(document.querySelectorAll('[data-testid="gantt-bar"]')).toHaveLength(2)
+
+    await user.click(screen.getByRole('button', { name: /設計/u }))
+    expect(screen.getByRole('button', { name: /PJA プロジェクトA/u })).toBeDefined()
+    expect(document.querySelectorAll('[data-testid="gantt-bar"]')).toHaveLength(1)
+  })
+
+  it('同じ名前の中項目が別の大項目にあっても片方だけ畳める', async () => {
+    const { user } = setup([makeIssue({ categoryNames: ['設計'] }), { ...OTHER_ISSUE, categoryNames: ['設計'] }], {
+      groupBy: ['project', 'category']
+    })
+    const [first] = screen.getAllByRole('button', { name: /設計/u })
+    await user.click(first)
     expect(document.querySelectorAll('[data-testid="gantt-bar"]')).toHaveLength(1)
   })
 })

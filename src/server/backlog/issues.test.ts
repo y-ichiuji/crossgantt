@@ -38,6 +38,7 @@ function makeRawIssue(overrides: Partial<BacklogIssue> = {}): BacklogIssue {
         archived: false
       }
     ],
+    category: [{ id: 7, projectId: 100, name: '設計', displayOrder: 0 }],
     ...overrides
   }
 }
@@ -83,7 +84,8 @@ describe('normalizeIssue', () => {
       startDate: '2026-09-01',
       dueDate: '2026-09-15',
       estimatedHours: 8,
-      milestoneNames: ['v1.0']
+      milestoneNames: ['v1.0'],
+      categoryNames: ['設計']
     })
   })
 
@@ -92,11 +94,26 @@ describe('normalizeIssue', () => {
     expect(issue.projectKey).toBe('ABC-DEF')
   })
 
-  it('担当者やマイルストーンが無くても壊れない', () => {
-    const issue = normalizeIssue(SPACE, {}, makeRawIssue({ assignee: null, milestone: null }))
+  it('担当者・マイルストーン・カテゴリが無くても壊れない', () => {
+    const issue = normalizeIssue(SPACE, {}, makeRawIssue({ assignee: null, milestone: null, category: null }))
     expect(issue.assigneeId).toBeNull()
     expect(issue.assigneeName).toBeNull()
     expect(issue.milestoneNames).toEqual([])
+    expect(issue.categoryNames).toEqual([])
+  })
+
+  it('カテゴリが複数あればすべて残す', () => {
+    const issue = normalizeIssue(
+      SPACE,
+      {},
+      makeRawIssue({
+        category: [
+          { id: 7, projectId: 100, name: '設計', displayOrder: 0 },
+          { id: 8, projectId: 100, name: '実装', displayOrder: 1 }
+        ]
+      })
+    )
+    expect(issue.categoryNames).toEqual(['設計', '実装'])
   })
 })
 

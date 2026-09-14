@@ -17,6 +17,7 @@ import {
   todayBand,
   weekendBands
 } from '../../shared/gantt'
+import type { GanttGroup, TimelineScale } from '../../shared/gantt'
 import type { GanttIssue, Holiday, ViewFilter } from '../../shared/types'
 import { AssigneeAvatar } from './AssigneeAvatar'
 import { IssueTooltip } from './IssueTooltip'
@@ -81,6 +82,8 @@ export function GanttChart({ issues, filter, today, projectNames, holidays, load
   const showTooltip = (issue: GanttIssue, event: { clientX: number; clientY: number }) => {
     setTooltip({ issue, x: event.clientX, y: event.clientY, overdue: isOverdue(issue, today) })
   }
+
+  const hideTooltip = () => setTooltip(null)
 
   if (dated.length === 0 && undated.length === 0) {
     return (
@@ -174,104 +177,18 @@ export function GanttChart({ issues, filter, today, projectNames, holidays, load
             </div>
           </div>
 
-          {groups.map((group) => {
-            const isCollapsed = collapsed.has(group.key)
-            return (
-              <div key={group.key}>
-                <div className={styles.groupRow}>
-                  <div className={styles.rowHead}>
-                    <button type="button" className={styles.groupToggle} onClick={() => toggleGroup(group.key)}>
-                      <span aria-hidden="true">{isCollapsed ? '▶' : '▼'}</span>
-                      {filter.groupBy === 'assignee' ? (
-                        <AssigneeAvatar assigneeId={group.assigneeId} assigneeName={group.label} size="md" />
-                      ) : null}
-                      <span className={styles.groupName}>{group.label}</span>
-                      <span className={styles.groupCount}>{group.issues.length}件</span>
-                      {group.overdueCount > 0 ? (
-                        <span className={styles.overdueBadge}>{group.overdueCount}件遅延</span>
-                      ) : null}
-                    </button>
-                  </div>
-                  <div className={styles.rowTrack} />
-                </div>
-
-                {isCollapsed
-                  ? null
-                  : group.issues.map((issue) => {
-                      const bar = resolveBar(issue, today)
-                      if (!bar) {
-                        return null
-                      }
-                      const geometry = barGeometry(bar, scale)
-                      const overdue = isOverdue(issue, today)
-                      // Backlog のガントチャートと同じく、バーの色はステータスで決める。
-                      const background = statusColor(issue)
-                      const foreground = readableTextColor(background)
-
-                      const label = `${issue.issueKey} ${issue.summary}`
-                      const period =
-                        bar.start === bar.end
-                          ? formatShort(bar.start)
-                          : `${formatShort(bar.start)}〜${formatShort(bar.end)}`
-
-                      return (
-                        <div
-                          className={styles.row}
-                          key={issue.id}
-                          style={{ contentVisibility: 'auto', containIntrinsicSize: `${ROW_HEIGHT}px` }}
-                        >
-                          <div className={styles.rowHead}>
-                            <AssigneeAvatar assigneeId={issue.assigneeId} assigneeName={issue.assigneeName} />
-                            <a
-                              className={styles.issueLink}
-                              href={issue.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              title={label}
-                            >
-                              <span className={styles.issueKey}>{issue.issueKey}</span>
-                              <span className={styles.issueSummary}>{issue.summary}</span>
-                            </a>
-                          </div>
-                          <div className={styles.rowTrack}>
-                            <a
-                              className={styles.bar}
-                              data-testid="gantt-bar"
-                              data-kind={bar.kind}
-                              data-overdue={overdue}
-                              data-closed={issue.isClosed}
-                              data-clip-start={geometry.clippedStart}
-                              data-clip-end={geometry.clippedEnd}
-                              style={{
-                                left: geometry.left,
-                                width: geometry.width,
-                                backgroundColor: background,
-                                color: foreground
-                              }}
-                              href={issue.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              aria-label={`${label}（${period}、${issue.statusName}）`}
-                              onMouseEnter={(event) => showTooltip(issue, event)}
-                              // mousemove ごとに setTooltip すると、毎秒数十回チャート全体が
-                              // 再レンダリングされる（行数ぶんの再計算と差分検出が走る）。
-                              // 位置決めは onMouseEnter の 1 回で足りる。
-                              onMouseLeave={() => setTooltip(null)}
-                              onFocus={(event) => {
-                                const rect = event.currentTarget.getBoundingClientRect()
-                                showTooltip(issue, { clientX: rect.left, clientY: rect.bottom })
-                              }}
-                              onBlur={() => setTooltip(null)}
-                            >
-                              {geometry.width >= 64 ? <span className={styles.barLabel}>{issue.summary}</span> : null}
-                            </a>
-                          </div>
-                        </div>
-                      )
-                    })}
-              </div>
-            )
-          })}
+          {groups.map((group) => (
+            <GroupSection
+              key={group.key}
+              group={group}
+              scale={scale}
+              today={today}
+              collapsed={collapsed}
+              onToggle={toggleGroup}
+              onShowTooltip={showTooltip}
+              onHideTooltip={hideTooltip}
+            />
+          ))}
         </div>
       </div>
 
@@ -281,6 +198,137 @@ export function GanttChart({ issues, filter, today, projectNames, holidays, load
 
       {tooltip ? <IssueTooltip state={tooltip} /> : null}
     </>
+  )
+}
+
+type RowProps = {
+  scale: TimelineScale
+  today: string
+  onShowTooltip: (issue: GanttIssue, event: { clientX: number; clientY: number }) => void
+  onHideTooltip: () => void
+}
+
+/**
+ * グループ 1 つぶんの見出しと、その配下。
+ *
+ * 大項目・中項目・小項目は同じ形なので、自分自身を呼んで下の段を描く。
+ * 課題の行が出るのは最下段（`children` が空の段）だけになる。
+ */
+function GroupSection({
+  group,
+  collapsed,
+  onToggle,
+  ...rowProps
+}: RowProps & {
+  group: GanttGroup
+  collapsed: Set<string>
+  onToggle: (key: string) => void
+}) {
+  const isCollapsed = collapsed.has(group.key)
+  return (
+    <div>
+      <div className={styles.groupRow} data-depth={group.depth}>
+        <div className={styles.rowHead}>
+          <button
+            type="button"
+            className={styles.groupToggle}
+            // 段の深さぶん字下げする。段数は 3 までなので、行頭が
+            // 名前を出せないほど押し出されることはない。
+            style={{ '--group-depth': group.depth } as React.CSSProperties}
+            onClick={() => onToggle(group.key)}
+            aria-expanded={!isCollapsed}
+          >
+            <span aria-hidden="true">{isCollapsed ? '▶' : '▼'}</span>
+            {group.groupBy === 'assignee' ? (
+              <AssigneeAvatar assigneeId={group.assigneeId} assigneeName={group.label} size="md" />
+            ) : null}
+            <span className={styles.groupName}>{group.label}</span>
+            <span className={styles.groupCount}>{group.issueCount}件</span>
+            {group.overdueCount > 0 ? <span className={styles.overdueBadge}>{group.overdueCount}件遅延</span> : null}
+          </button>
+        </div>
+        <div className={styles.rowTrack} />
+      </div>
+
+      {isCollapsed ? null : (
+        <>
+          {group.children.map((child) => (
+            <GroupSection key={child.key} group={child} collapsed={collapsed} onToggle={onToggle} {...rowProps} />
+          ))}
+          {group.issues.map((issue) => (
+            <IssueRow key={issue.id} issue={issue} depth={group.depth + 1} {...rowProps} />
+          ))}
+        </>
+      )}
+    </div>
+  )
+}
+
+/** 課題 1 件ぶんの行。左に課題名、右にバーを置く。 */
+function IssueRow({
+  issue,
+  depth,
+  scale,
+  today,
+  onShowTooltip,
+  onHideTooltip
+}: RowProps & { issue: GanttIssue; depth: number }) {
+  const bar = resolveBar(issue, today)
+  if (!bar) {
+    return null
+  }
+  const geometry = barGeometry(bar, scale)
+  const overdue = isOverdue(issue, today)
+  // Backlog のガントチャートと同じく、バーの色はステータスで決める。
+  const background = statusColor(issue)
+  const foreground = readableTextColor(background)
+
+  const label = `${issue.issueKey} ${issue.summary}`
+  const period = bar.start === bar.end ? formatShort(bar.start) : `${formatShort(bar.start)}〜${formatShort(bar.end)}`
+
+  return (
+    <div className={styles.row} style={{ contentVisibility: 'auto', containIntrinsicSize: `${ROW_HEIGHT}px` }}>
+      <div className={styles.rowHead} style={{ '--group-depth': depth } as React.CSSProperties}>
+        <AssigneeAvatar assigneeId={issue.assigneeId} assigneeName={issue.assigneeName} />
+        <a className={styles.issueLink} href={issue.url} target="_blank" rel="noreferrer" title={label}>
+          <span className={styles.issueKey}>{issue.issueKey}</span>
+          <span className={styles.issueSummary}>{issue.summary}</span>
+        </a>
+      </div>
+      <div className={styles.rowTrack}>
+        <a
+          className={styles.bar}
+          data-testid="gantt-bar"
+          data-kind={bar.kind}
+          data-overdue={overdue}
+          data-closed={issue.isClosed}
+          data-clip-start={geometry.clippedStart}
+          data-clip-end={geometry.clippedEnd}
+          style={{
+            left: geometry.left,
+            width: geometry.width,
+            backgroundColor: background,
+            color: foreground
+          }}
+          href={issue.url}
+          target="_blank"
+          rel="noreferrer"
+          aria-label={`${label}（${period}、${issue.statusName}）`}
+          onMouseEnter={(event) => onShowTooltip(issue, event)}
+          // mousemove ごとに setTooltip すると、毎秒数十回チャート全体が
+          // 再レンダリングされる（行数ぶんの再計算と差分検出が走る）。
+          // 位置決めは onMouseEnter の 1 回で足りる。
+          onMouseLeave={onHideTooltip}
+          onFocus={(event) => {
+            const rect = event.currentTarget.getBoundingClientRect()
+            onShowTooltip(issue, { clientX: rect.left, clientY: rect.bottom })
+          }}
+          onBlur={onHideTooltip}
+        >
+          {geometry.width >= 64 ? <span className={styles.barLabel}>{issue.summary}</span> : null}
+        </a>
+      </div>
+    </div>
   )
 }
 

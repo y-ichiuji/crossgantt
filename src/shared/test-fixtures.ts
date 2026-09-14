@@ -30,6 +30,7 @@ export function makeIssue(overrides: Partial<GanttIssue> = {}): GanttIssue {
     actualHours: 3,
     parentIssueId: null,
     milestoneNames: ['v1.0'],
+    categoryNames: ['設計'],
     ...overrides
   }
 }

@@ -109,7 +109,7 @@ function hasExplicitSelection(filter: ViewFilter): boolean {
     filter.assigneeIds.length > 0 ||
     filter.statusNames.length > 0 ||
     filter.keyword !== '' ||
-    filter.groupBy !== base.groupBy ||
+    filter.groupBy.join(',') !== base.groupBy.join(',') ||
     filter.zoom !== base.zoom ||
     filter.includeClosed !== base.includeClosed ||
     filter.includeNoDate !== base.includeNoDate
@@ -194,6 +194,11 @@ export default function App() {
       }
       if (!isDateKey(next.to)) {
         next.to = prev.to
+      }
+      // 軸が 1 つも無いとグループ行を 1 つも作れず、課題がまるごと消える。
+      // 画面は「なし」を選べない作りだが、ここでも直前の値を保つ。
+      if (next.groupBy.length === 0) {
+        next.groupBy = prev.groupBy
       }
       // 期間が逆転しないように補正する。
       if (next.to < next.from) {

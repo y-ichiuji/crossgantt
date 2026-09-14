@@ -36,6 +36,13 @@ export type BacklogVersion = {
   archived: boolean
 }
 
+export type BacklogCategory = {
+  id: number
+  projectId: number
+  name: string
+  displayOrder: number
+}
+
 export type BacklogIssue = {
   id: number
   projectId: number
@@ -49,6 +56,7 @@ export type BacklogIssue = {
   actualHours: number | null
   parentIssueId: number | null
   milestone: BacklogVersion[] | null
+  category: BacklogCategory[] | null
 }
 
 export type BacklogRateLimitEntry = {

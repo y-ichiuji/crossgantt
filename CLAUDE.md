@@ -52,6 +52,8 @@ Backlog のレート制限は区分ごとに 1 分あたりの回数で効きま
 - マスタ情報は **プロジェクト単位** でキャッシュする。選択したプロジェクトの組をキーにすると、
   1 つ変えるだけで全件を取り直すことになる
 - `CacheService` は 1 キー 100KB までなので、大きな応答は `src/server/cache.ts` が断片に分けて保持する
+- `GanttIssue` に項目を足したら `src/server/api.ts` の `ISSUES_SCHEMA_VERSION` を上げる。
+  上げないとデプロイ直後の TTL のあいだ、項目の欠けた内容がキャッシュから返り続ける
 
 ## セキュリティ上の前提
 
@@ -64,7 +66,8 @@ Backlog のレート制限は区分ごとに 1 分あたりの回数で効きま
 
 `pnpm dev` は見た目を見るためのもので、Apps Script のサービスが無いため API とログインは動きません。
 実際の動作は `pnpm run push`（ビルドして `clasp push`）で反映し、`/dev` の URL
-（`https://script.google.com/macros/s/<スクリプト ID>/dev`）で確認します。`/dev` は常に最新の push を映すため、
+（`https://script.google.com/macros/s/<HEAD デプロイ ID>/dev`）で確認します。この ID は `.clasp.json` の
+スクリプト ID ではなく、`clasp deployments` が `@HEAD` と表示する行の ID です。`/dev` は常に最新の push を映すため、
 デプロイを更新する必要はありません。リダイレクト URI は `/exec` 固定なので `/dev` からログインすると `/exec` 側へ
 戻りますが、セッションは Google アカウント単位で残るため `/dev` を開き直せばログイン済みです。
 

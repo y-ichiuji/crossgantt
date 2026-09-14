@@ -46,6 +46,7 @@ function makeIssue(overrides: Partial<GanttIssue> = {}): GanttIssue {
     actualHours: null,
     parentIssueId: null,
     milestoneNames: [],
+    categoryNames: [],
     ...overrides
   }
 }
@@ -132,30 +133,30 @@ describe('groupIssues', () => {
   ]
 
   it('担当者別にまとめ、未割り当てを末尾に置く', () => {
-    const groups = groupIssues(issues, 'assignee', TODAY)
+    const groups = groupIssues(issues, ['assignee'], TODAY)
     expect(groups.map((group) => group.label)).toEqual(['佐藤花子', '山田太郎', '未割り当て'])
   })
 
   it('遅延件数を数える', () => {
-    const groups = groupIssues(issues, 'assignee', TODAY)
+    const groups = groupIssues(issues, ['assignee'], TODAY)
     const unassigned = groups.find((group) => group.label === '未割り当て')
     expect(unassigned?.overdueCount).toBe(1)
   })
 
   it('プロジェクト別ではプロジェクト名を使う', () => {
-    const groups = groupIssues(issues, 'project', TODAY, { 100: 'プロジェクトA', 200: 'プロジェクトB' })
+    const groups = groupIssues(issues, ['project'], TODAY, { 100: 'プロジェクトA', 200: 'プロジェクトB' })
     expect(groups.map((group) => group.label)).toEqual(['プロジェクトA', 'プロジェクトB'])
   })
 
   it('プロジェクト名が無ければプロジェクトキーで代替する', () => {
-    const groups = groupIssues([issues[0]], 'project', TODAY)
+    const groups = groupIssues([issues[0]], ['project'], TODAY)
     expect(groups[0].label).toBe('PJA')
   })
 
   it('マイルストーン別では複数所属の課題が両方に現れる', () => {
     const multi = makeIssue({ id: 9, milestoneNames: ['v1.0', 'v1.1'] })
     const none = makeIssue({ id: 10, milestoneNames: [] })
-    const groups = groupIssues([multi, none], 'milestone', TODAY)
+    const groups = groupIssues([multi, none], ['milestone'], TODAY)
     expect(groups.map((group) => group.label)).toEqual(['v1.0', 'v1.1', 'マイルストーンなし'])
     expect(groups[0].issues).toHaveLength(1)
     expect(groups[1].issues).toHaveLength(1)
@@ -167,10 +168,88 @@ describe('groupIssues', () => {
         makeIssue({ id: 1, assigneeId: 10, assigneeName: 'A', startDate: '2026-09-20' }),
         makeIssue({ id: 2, assigneeId: 10, assigneeName: 'A', startDate: '2026-09-01' })
       ],
-      'assignee',
+      ['assignee'],
       TODAY
     )
     expect(groups[0].issues.map((issue) => issue.id)).toEqual([2, 1])
+  })
+})
+
+describe('多段のグルーピング', () => {
+  // 並び順を見るテストがあるため、カテゴリ名は照合順序の揺れない ASCII にする。
+  const inA = makeIssue({ id: 1, projectId: 100, projectKey: 'PJA', categoryNames: ['A'] })
+  const inB = makeIssue({ id: 2, projectId: 100, projectKey: 'PJA', categoryNames: ['B'] })
+  const inBoth = makeIssue({ id: 3, projectId: 100, projectKey: 'PJA', categoryNames: ['A', 'B'] })
+  const otherProject = makeIssue({ id: 4, projectId: 200, projectKey: 'PJB', categoryNames: ['A'] })
+  const noCategory = makeIssue({ id: 5, projectId: 100, projectKey: 'PJA', categoryNames: [] })
+
+  it('大項目の下に中項目がぶら下がる', () => {
+    const groups = groupIssues([inA, inB], ['project', 'category'], TODAY)
+    expect(groups.map((group) => group.label)).toEqual(['PJA'])
+    expect(groups[0].children.map((group) => group.label)).toEqual(['A', 'B'])
+  })
+
+  it('課題が入るのは最下段だけ', () => {
+    const groups = groupIssues([inA], ['project', 'category'], TODAY)
+    expect(groups[0].issues).toEqual([])
+    expect(groups[0].children[0].issues.map((issue) => issue.id)).toEqual([1])
+  })
+
+  it('段ごとに深さと軸を持つ', () => {
+    const groups = groupIssues([inA], ['project', 'category'], TODAY)
+    expect(groups[0]).toMatchObject({ depth: 0, groupBy: 'project' })
+    expect(groups[0].children[0]).toMatchObject({ depth: 1, groupBy: 'category' })
+  })
+
+  it('複数のカテゴリを持つ課題は中項目の両方に現れる', () => {
+    const groups = groupIssues([inBoth], ['project', 'category'], TODAY)
+    expect(groups[0].children.map((group) => group.label)).toEqual(['A', 'B'])
+    expect(groups[0].children[0].issues).toHaveLength(1)
+    expect(groups[0].children[1].issues).toHaveLength(1)
+  })
+
+  it('上の段の件数は重複を除いた実数になる', () => {
+    const groups = groupIssues([inBoth], ['project', 'category'], TODAY)
+    // 2 つのカテゴリに現れるが、課題そのものは 1 件しかない。
+    expect(groups[0].issueCount).toBe(1)
+  })
+
+  it('遅延件数も重複を除いて上の段へ集計する', () => {
+    const overdue = makeIssue({ id: 6, categoryNames: ['A', 'B'], dueDate: '2026-09-01' })
+    const groups = groupIssues([overdue], ['project', 'category'], TODAY)
+    expect(groups[0].overdueCount).toBe(1)
+  })
+
+  it('値なしのグループは段ごとに末尾へ置く', () => {
+    const groups = groupIssues([inA, noCategory], ['project', 'category'], TODAY)
+    expect(groups[0].children.map((group) => group.label)).toEqual(['A', 'カテゴリなし'])
+  })
+
+  it('同じ名前の中項目でも大項目が違えば別のグループになる', () => {
+    const groups = groupIssues([inA, otherProject], ['project', 'category'], TODAY)
+    const keys = groups.flatMap((group) => group.children.map((child) => child.key))
+    expect(new Set(keys).size).toBe(2)
+  })
+
+  it('3 段まで重ねられる', () => {
+    const groups = groupIssues([inA], ['project', 'category', 'assignee'], TODAY)
+    expect(groups[0].children[0].children.map((group) => group.label)).toEqual(['山田太郎'])
+    expect(groups[0].children[0].children[0].issues).toHaveLength(1)
+  })
+
+  it('名前に区切り文字が入っていても段をまたいでキーが衝突しない', () => {
+    // 退避しないと、どちらの課題も `/n:A/n:B/n:C` という同じキーへ落ちる。
+    const left = makeIssue({ id: 7, milestoneNames: ['A/n:B'], categoryNames: ['C'] })
+    const right = makeIssue({ id: 8, milestoneNames: ['A'], categoryNames: ['B/n:C'] })
+    const groups = groupIssues([left, right], ['milestone', 'category'], TODAY)
+    const keys = groups.flatMap((group) => group.children.map((child) => child.key))
+    expect(new Set(keys).size).toBe(keys.length)
+  })
+
+  it('1 段だけでも最下段として課題を持つ', () => {
+    const groups = groupIssues([inA], ['category'], TODAY)
+    expect(groups[0].children).toEqual([])
+    expect(groups[0].issues).toHaveLength(1)
   })
 })
 
@@ -398,17 +477,17 @@ describe('readableTextColor', () => {
 
 describe('groupIssues の担当者 ID', () => {
   it('担当者別のときはグループに担当者 ID が入る', () => {
-    const groups = groupIssues([makeIssue({ assigneeId: 10, assigneeName: '山田太郎' })], 'assignee', TODAY)
+    const groups = groupIssues([makeIssue({ assigneeId: 10, assigneeName: '山田太郎' })], ['assignee'], TODAY)
     expect(groups[0].assigneeId).toBe(10)
   })
 
   it('未割り当てのグループは null', () => {
-    const groups = groupIssues([makeIssue({ assigneeId: null, assigneeName: null })], 'assignee', TODAY)
+    const groups = groupIssues([makeIssue({ assigneeId: null, assigneeName: null })], ['assignee'], TODAY)
     expect(groups[0].assigneeId).toBeNull()
   })
 
   it('プロジェクト別のときは null', () => {
-    const groups = groupIssues([makeIssue()], 'project', TODAY)
+    const groups = groupIssues([makeIssue()], ['project'], TODAY)
     expect(groups[0].assigneeId).toBeNull()
   })
 })

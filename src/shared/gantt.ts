@@ -81,17 +81,134 @@ export function filterByRange(issues: GanttIssue[], from: string, to: string, to
 
 // --- グルーピング ---
 
+/**
+ * グルーピングされた課題のひとかたまり。
+ *
+ * 大項目・中項目・小項目は同じ形で表し、下位の階層を `children` に持つ。
+ * 課題が入るのは最下段だけで、上位の階層は件数だけを持つ。
+ */
 export type GanttGroup = {
+  /**
+   * 祖先のキーを連ねた識別子。
+   *
+   * 同じ名前のカテゴリが別々のプロジェクトにぶら下がることがあるため、
+   * その階層だけでは一意にならない。折りたたみ状態はこのキーで覚える。
+   */
   key: string
   label: string
+  /** この階層の軸。見出しの見せ方を変えるために使う。 */
+  groupBy: GroupBy
+  /** 0 が大項目。 */
+  depth: number
+  /** 下位の階層。最下段では空。 */
+  children: GanttGroup[]
+  /** 最下段のときだけ入る。 */
   issues: GanttIssue[]
+  /**
+   * 配下の課題数。
+   *
+   * カテゴリとマイルストーンは 1 課題に複数付けられるため、下位の階層に
+   * 同じ課題が何度も現れる。ここは実際の課題数を出したいので、重複は除く
+   * （つまり子の件数の合計とは一致しないことがある）。
+   */
+  issueCount: number
+  /** 配下の期限超過かつ未完了の課題数。`issueCount` と同じく重複を除く。 */
   overdueCount: number
   /** 担当者別のときだけ入る。見出しにアイコンを出すために使う。 */
   assigneeId: number | null
 }
 
-const UNASSIGNED_KEY = '__unassigned__'
-const NO_MILESTONE_KEY = '__no_milestone__'
+/**
+ * 値が設定されていない課題を集める先のキー。
+ *
+ * 同じ階層の他のキーは `u`・`p`・`n:` で始まるため衝突しない。
+ */
+const UNSET_KEY = '__unset__'
+
+/**
+ * 値が設定されていない課題を集めるグループの名前。
+ *
+ * プロジェクトは必ず 1 つ決まるため、この表には無い。
+ */
+const UNSET_LABELS: Record<'assignee' | 'milestone' | 'category', string> = {
+  assignee: '未割り当て',
+  milestone: 'マイルストーンなし',
+  category: 'カテゴリなし'
+}
+
+/** ある軸から見た、課題の所属先 1 つぶん。 */
+type GroupSlot = {
+  /** 同じ階層の中で一意な断片。 */
+  key: string
+  label: string
+  assigneeId: number | null
+  /** 値が設定されていないことを表すグループかどうか。並び順で末尾へ送る。 */
+  unset: boolean
+}
+
+/**
+ * 1 つの軸について、課題が属するグループを返す。
+ *
+ * カテゴリとマイルストーンは 1 課題に複数付けられるため、複数返ることがある。
+ * その場合、課題はそれぞれのグループに重複して現れる。
+ */
+function slotsOf(issue: GanttIssue, groupBy: GroupBy, projectNames: Record<number, string>): GroupSlot[] {
+  if (groupBy === 'assignee') {
+    const { assigneeId } = issue
+    if (assigneeId === null) {
+      return [{ key: UNSET_KEY, label: UNSET_LABELS.assignee, assigneeId: null, unset: true }]
+    }
+    return [{ key: `u${assigneeId}`, label: issue.assigneeName ?? UNSET_LABELS.assignee, assigneeId, unset: false }]
+  }
+  if (groupBy === 'project') {
+    return [
+      {
+        key: `p${issue.projectId}`,
+        label: projectNames[issue.projectId] ?? issue.projectKey,
+        assigneeId: null,
+        unset: false
+      }
+    ]
+  }
+
+  const names = groupBy === 'milestone' ? issue.milestoneNames : issue.categoryNames
+  if (names.length === 0) {
+    return [{ key: UNSET_KEY, label: UNSET_LABELS[groupBy], assigneeId: null, unset: true }]
+  }
+  return names.map((name) => ({ key: `n:${name}`, label: name, assigneeId: null, unset: false }))
+}
+
+/** グループキーで段の区切りに使う文字。 */
+const KEY_SEPARATOR = '/'
+
+/**
+ * グループキーの断片から区切り文字を退避する。
+ *
+ * 断片にはカテゴリ名やマイルストーン名が入り、利用者が自由に付けられるため
+ * 区切りの `/` を含みうる。退避しないと、たとえば「マイルストーン `A/n:B` ×
+ * カテゴリ `C`」と「マイルストーン `A` × カテゴリ `B/n:C`」が同じキーになり、
+ * 別のグループが折りたたみ状態を共有してしまう。
+ *
+ * 逃がし方は `shared/filter.ts` の `encodeNameList` と同じで、`\` を `\\` に、
+ * 区切り文字を `\/` に置き換える。キーは表示にも URL にも出ないため、
+ * 元へ戻す必要は無い（一意であればよい）。
+ */
+function escapeKeyPart(part: string): string {
+  return part
+    .split('\\')
+    .join(String.raw`\\`)
+    .split(KEY_SEPARATOR)
+    .join(String.raw`\/`)
+}
+
+/** 組み立て途中のグループ。 */
+type Bucket = {
+  group: GanttGroup
+  unset: boolean
+  children: Map<string, Bucket>
+  /** 配下に現れた課題 ID。複数の下位グループに属する課題を二重に数えないために持つ。 */
+  seen: Set<number>
+}
 
 /** 課題の並び順。開始日 → 期限日 → 課題キーの順で安定ソートする。 */
 function compareIssues(a: GanttIssue, b: GanttIssue): number {
@@ -108,63 +225,104 @@ function compareIssues(a: GanttIssue, b: GanttIssue): number {
   return a.issueKey.localeCompare(b.issueKey)
 }
 
-/** グループの並び順。「未割り当て」「マイルストーンなし」は末尾に置く。 */
-function compareGroups(a: GanttGroup, b: GanttGroup): number {
-  const aLast = a.key === UNASSIGNED_KEY || a.key === NO_MILESTONE_KEY
-  const bLast = b.key === UNASSIGNED_KEY || b.key === NO_MILESTONE_KEY
-  if (aLast !== bLast) {
-    return aLast ? 1 : -1
+/** グループの並び順。「未割り当て」のような値なしのグループは末尾に置く。 */
+function compareBuckets(a: Bucket, b: Bucket): number {
+  if (a.unset !== b.unset) {
+    return a.unset ? 1 : -1
   }
-  return a.label.localeCompare(b.label, 'ja')
+  return a.group.label.localeCompare(b.group.label, 'ja')
+}
+
+/** 課題を 1 件、`depth` 段目以降のグループへ振り分ける。 */
+function insert(
+  level: Map<string, Bucket>,
+  parentKey: string,
+  issue: GanttIssue,
+  depth: number,
+  axes: GroupBy[],
+  today: string,
+  projectNames: Record<number, string>
+): void {
+  const groupBy = axes[depth]
+  const isLeaf = depth === axes.length - 1
+
+  for (const slot of slotsOf(issue, groupBy, projectNames)) {
+    const key = `${parentKey}${KEY_SEPARATOR}${escapeKeyPart(slot.key)}`
+    let bucket = level.get(key)
+    if (!bucket) {
+      bucket = {
+        group: {
+          key,
+          label: slot.label,
+          groupBy,
+          depth,
+          children: [],
+          issues: [],
+          issueCount: 0,
+          overdueCount: 0,
+          assigneeId: slot.assigneeId
+        },
+        unset: slot.unset,
+        children: new Map(),
+        seen: new Set()
+      }
+      level.set(key, bucket)
+    }
+
+    // 同じ課題が別の経路で再びここへ来ることがある（カテゴリを 2 つ持つ課題が
+    // どちらの枝からも同じプロジェクトへ集まる場合など）。件数も行も一度だけ。
+    if (!bucket.seen.has(issue.id)) {
+      bucket.seen.add(issue.id)
+      bucket.group.issueCount += 1
+      if (isOverdue(issue, today)) {
+        bucket.group.overdueCount += 1
+      }
+      if (isLeaf) {
+        bucket.group.issues.push(issue)
+      }
+    }
+
+    if (!isLeaf) {
+      insert(bucket.children, key, issue, depth + 1, axes, today, projectNames)
+    }
+  }
+}
+
+/** 組み立て途中の入れ物を、並べ替え済みの結果へ畳む。 */
+function finalize(level: Map<string, Bucket>): GanttGroup[] {
+  return [...level.values()].toSorted(compareBuckets).map((bucket) => {
+    bucket.group.children = finalize(bucket.children)
+    bucket.group.issues = bucket.group.issues.toSorted(compareIssues)
+    return bucket.group
+  })
 }
 
 /**
- * 課題をグルーピング軸ごとにまとめる。
+ * 課題を大項目から順にグルーピングし、木構造で返す。
  *
- * マイルストーン軸では、複数のマイルストーンに属する課題は
- * それぞれのグループに重複して現れる（Backlog の仕様上ありうるため）。
+ * `groupBy` は大項目を先頭に並べた軸の列。`parseFilter`（`shared/filter.ts`）が
+ * 1 つ以上・重複なし・上限段数以内に正してから渡すため、内容は検証しない。
+ *
+ * カテゴリとマイルストーンの軸では、複数の値を持つ課題はそれぞれのグループに
+ * 重複して現れる（Backlog の仕様上ありうるため）。
  */
 export function groupIssues(
   issues: GanttIssue[],
-  groupBy: GroupBy,
+  groupBy: GroupBy[],
   today: string,
   projectNames: Record<number, string> = {}
 ): GanttGroup[] {
-  const buckets = new Map<string, GanttGroup>()
-
-  const push = (key: string, label: string, issue: GanttIssue, assigneeId: number | null = null) => {
-    let group = buckets.get(key)
-    if (!group) {
-      group = { key, label, issues: [], overdueCount: 0, assigneeId }
-      buckets.set(key, group)
-    }
-    group.issues.push(issue)
-    if (isOverdue(issue, today)) {
-      group.overdueCount += 1
-    }
+  // 軸が空だと `insert` の再帰に終わりが無く、スタックを使い切って画面が
+  // 真っ白になる。呼び出し側が 1 つ以上を保証する取り決めだが、ここで
+  // 空を返しておけば取り決めが破れても落ちるところまではいかない。
+  if (groupBy.length === 0) {
+    return []
   }
-
+  const roots = new Map<string, Bucket>()
   for (const issue of issues) {
-    if (groupBy === 'assignee') {
-      const key = issue.assigneeId === null ? UNASSIGNED_KEY : `u${issue.assigneeId}`
-      push(key, issue.assigneeName ?? '未割り当て', issue, issue.assigneeId)
-    } else if (groupBy === 'project') {
-      const label = projectNames[issue.projectId] ?? issue.projectKey
-      push(`p${issue.projectId}`, label, issue)
-    } else if (issue.milestoneNames.length === 0) {
-      push(NO_MILESTONE_KEY, 'マイルストーンなし', issue)
-    } else {
-      for (const name of issue.milestoneNames) {
-        push(`m:${name}`, name, issue)
-      }
-    }
+    insert(roots, '', issue, 0, groupBy, today, projectNames)
   }
-
-  const groups = [...buckets.values()]
-  for (const group of groups) {
-    group.issues = group.issues.toSorted(compareIssues)
-  }
-  return groups.toSorted(compareGroups)
+  return finalize(roots)
 }
 
 // --- サマリー ---

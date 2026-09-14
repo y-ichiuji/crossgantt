@@ -24,6 +24,7 @@ export type GanttIssue = {
   actualHours: number | null
   parentIssueId: number | null
   milestoneNames: string[]
+  categoryNames: string[]
 }
 
 /** プロジェクト選択肢。 */
@@ -59,7 +60,7 @@ export type Viewer = {
 }
 
 /** ガント行のグルーピング軸。 */
-export type GroupBy = 'assignee' | 'project' | 'milestone'
+export type GroupBy = 'assignee' | 'project' | 'milestone' | 'category'
 
 /** タイムラインのズームレベル。 */
 export type Zoom = 'day' | 'week' | 'month'
@@ -74,7 +75,13 @@ export type ViewFilter = {
   /** yyyy-MM-dd */
   to: string
   keyword: string
-  groupBy: GroupBy
+  /**
+   * グルーピング軸。大項目を先頭に、中項目・小項目と続く。
+   *
+   * 1 つ以上・重複なし・`MAX_GROUP_DEPTH` 段以内であることを
+   * `parseGroupBy`（`shared/filter.ts`）が保証する。
+   */
+  groupBy: GroupBy[]
   zoom: Zoom
   includeClosed: boolean
   includeNoDate: boolean
