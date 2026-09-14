@@ -417,8 +417,15 @@ function parseHexColor(color: string): [number, number, number] | null {
     return null
   }
   const hex = color.slice(1)
-  // `#abc` を `#aabbcc` に展開する。16 進数字だけなので 1 文字ずつで問題ない。
-  const full = hex.length === 3 ? hex.replaceAll(/./gu, (char) => char + char) : hex
+  // `#abc` を `#aabbcc` に展開する。直前の `HEX_COLOR.test` を通っているので
+  // 中身は 16 進数字だけであり、添字で 1 文字ずつ見てよい。
+  //
+  // `replaceAll` は使わない。このモジュールは `src/shared/` にあり、サーバー側
+  // （Apps Script の V8）のバンドルへも入りうる。V8 がどの ECMAScript 版まで
+  // 含むかは公表されておらず、ES2021 の組み込みが在る保証がない。
+  // `polyfill.ts` が補っているのは `toSorted` だけで、`smoke` は tree-shaking 後の
+  // バンドルしか見られないため、サーバーが import した瞬間に実行時まで気づけない。
+  const full = hex.length === 3 ? `${hex[0]}${hex[0]}${hex[1]}${hex[1]}${hex[2]}${hex[2]}` : hex
   return [
     Number.parseInt(full.slice(0, 2), 16),
     Number.parseInt(full.slice(2, 4), 16),

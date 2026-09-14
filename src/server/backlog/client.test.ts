@@ -231,7 +231,9 @@ describe('BacklogClient の部分失敗', () => {
     ])
 
     expect(results[0]).toMatchObject({ contentType: 'image/png' })
-    expect(results[1]).toBeNull()
+    // 失敗は状態コードごと返す。404（アイコンが無い）と 429（いま取れない）を
+    // 呼び出し側が区別できないと、一時的な失敗まで「無い」として覚えてしまう。
+    expect(results[1]).toMatchObject({ name: 'BacklogApiError', status: 404 })
     expect(results[2]).toMatchObject({ contentType: 'image/png' })
   })
 

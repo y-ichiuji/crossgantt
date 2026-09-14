@@ -8,7 +8,15 @@ const SUMMARY: GanttSummary = { total: 128, overdue: 7, noDate: 12, inRange: 100
 
 function setup(props: Partial<React.ComponentProps<typeof SummaryBar>> = {}) {
   render(
-    <SummaryBar summary={SUMMARY} truncated={false} requestCount={30} fetchedAt={null} loading={false} {...props} />
+    <SummaryBar
+      summary={SUMMARY}
+      truncated={false}
+      noDateTruncated={false}
+      requestCount={30}
+      fetchedAt={null}
+      loading={false}
+      {...props}
+    />
   )
 }
 

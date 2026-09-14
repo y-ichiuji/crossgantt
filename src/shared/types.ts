@@ -94,8 +94,16 @@ export type IssuesQuery = Pick<
 /** /api/issues のレスポンス。 */
 export type IssuesResponse = {
   issues: GanttIssue[]
-  /** ページング上限に達して打ち切った場合 true。 */
+  /** 表示期間に重なる課題をページング上限で打ち切った場合 true。 */
   truncated: boolean
+  /**
+   * 日付未設定の課題の走査を打ち切った場合 true。
+   *
+   * この走査は日付条件なしで取得してから絞るため、対象はプロジェクトの全課題に
+   * なる。`truncated` と同じ扱いにすると「期間を絞り込んでください」と案内して
+   * しまうが、期間を変えてもこの走査は縮まない。案内を分けるために別に持つ。
+   */
+  noDateTruncated: boolean
   /** Backlog へ実際に投げたリクエスト数。 */
   requestCount: number
   fetchedAt: string

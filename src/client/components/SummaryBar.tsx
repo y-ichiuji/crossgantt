@@ -6,6 +6,7 @@ import styles from './SummaryBar.module.css'
 type Props = {
   summary: GanttSummary
   truncated: boolean
+  noDateTruncated: boolean
   requestCount: number
   fetchedAt: string | null
   loading: boolean
@@ -18,7 +19,7 @@ function formatTime(iso: string): string {
 }
 
 /** 件数と取得状況のサマリー。 */
-export function SummaryBar({ summary, truncated, requestCount, fetchedAt, loading }: Props) {
+export function SummaryBar({ summary, truncated, noDateTruncated, requestCount, fetchedAt, loading }: Props) {
   return (
     <div className={styles.bar}>
       <span className={styles.item}>
@@ -35,6 +36,17 @@ export function SummaryBar({ summary, truncated, requestCount, fetchedAt, loadin
       {truncated ? (
         <output className={styles.warning}>
           件数が多いため一部のみ表示しています。期間やプロジェクトを絞り込んでください。
+        </output>
+      ) : null}
+
+      {/*
+       * 日付未設定の課題は日付条件なしで走査して絞り込むため、対象はプロジェクトの
+       * 全課題になる。打ち切りの案内を上と同じにすると「期間を絞り込んでください」と
+       * 言うことになるが、期間を変えてもこの走査は縮まない。別の案内にする。
+       */}
+      {noDateTruncated ? (
+        <output className={styles.warning}>
+          日付未設定の課題は新しいものから一部のみ拾っています。プロジェクトを絞り込んでください。
         </output>
       ) : null}
 

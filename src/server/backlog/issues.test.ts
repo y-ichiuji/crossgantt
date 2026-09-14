@@ -124,7 +124,11 @@ describe('fetchGanttIssues', () => {
   it('プロジェクト未選択なら Backlog を呼ばない', () => {
     const { client } = createClient(() => ({}))
 
-    expect(fetchGanttIssues(client, {}, params({ projectIds: [] }))).toEqual({ issues: [], truncated: false })
+    expect(fetchGanttIssues(client, {}, params({ projectIds: [] }))).toEqual({
+      issues: [],
+      truncated: false,
+      noDateTruncated: false
+    })
     expect(client.requestCount).toBe(0)
   })
 
@@ -219,7 +223,10 @@ describe('fetchGanttIssues', () => {
     const firstNoDatePage = new URL(noDatePages[0].url)
     expect(firstNoDatePage.searchParams.get('sort')).toBe('created')
     expect(firstNoDatePage.searchParams.get('order')).toBe('desc')
-    expect(result.truncated).toBe(true)
+    // 日付条件なしのクエリの打ち切りは別の印にする。表示期間の課題を取り切れた
+    // かどうかとは別ものであり、同じにすると効かない案内（期間を絞り込む）を
+    // 出し続けることになる。
+    expect(result.noDateTruncated).toBe(true)
   })
 
   it('プロジェクトが多い場合は URL に収まる組に分けて問い合わせる', () => {

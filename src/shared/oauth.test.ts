@@ -66,13 +66,14 @@ describe('encodeState / decodeState', () => {
     expect(decodeState(undefined)).toBeNull()
   })
 
-  it('表示条件が長すぎる場合はパラメータの区切りまでで切る', () => {
+  it('表示条件が長すぎる場合は長いパラメータから丸ごと落とす', () => {
     // 値の途中で切ると「妥当だが別の条件」として復元されてしまうため、
-    // 切るのは `&` の位置に限る。
+    // 落とすのはパラメータ単位に限る。落とす順は長いほうから。末尾から切ると、
+    // 最後に書き出される from / to のような短くて欠かせない項目が先に消える。
     const filler = `pad=${'x'.repeat(MAX_STATE_QUERY_LENGTH - 10)}`
-    const query = `${filler}&projects=100,200,300`
+    const query = `${filler}&projects=100,200,300&from=2026-09-01&to=2026-12-31`
     const restored = decodeState(encodeState({ nonce: NONCE, space: SPACE, query }))?.query
-    expect(restored).toBe(filler)
+    expect(restored).toBe('projects=100,200,300&from=2026-09-01&to=2026-12-31')
   })
 
   it('最初のパラメータだけで上限を超える場合は表示条件を落とす', () => {
