@@ -11,7 +11,7 @@
     "smoke": "node scripts/smoke.mjs",
     "push": "pnpm run build && clasp push --force",
     "deploy": "pnpm run build && node scripts/deploy-gas.mjs",
-    "lint": "oxlint --type-aware",
+    "lint": "oxlint --type-aware --deny-warnings",
     "lint:fix": "oxlint --type-aware --fix",
     "format": "oxfmt",
     "format:check": "oxfmt --check",

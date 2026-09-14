@@ -7,7 +7,8 @@
  * 使い続けるのが前提になる。
  *
  * 必要な設定:
- *   .clasp.json        scriptId と rootDir。無い場合は GAS_SCRIPT_ID から作る
+ *   .clasp.json        scriptId と rootDir。無い場合は GAS_SCRIPT_ID から作り、
+ *                      既にある場合は scriptId が食い違っていないか確かめる
  *   GAS_DEPLOYMENT_ID  更新するデプロイの ID（未指定なら新しく作る）
  *
  * 使い方: node scripts/deploy-gas.mjs
@@ -20,12 +21,29 @@ import { readFile, writeFile } from 'node:fs/promises'
 const CLASP_CONFIG = '.clasp.json'
 const ROOT_DIR = 'gas-dist'
 
+/**
+ * @param {string} message
+ * @returns {never}
+ */
 function fail(message) {
   console.error(message)
   process.exit(1)
 }
 
-/** clasp を 1 回実行する。失敗したらそこで止める。 */
+/**
+ * 既に同名のファイルがあったことによる失敗かどうか。
+ *
+ * @param {unknown} error
+ */
+function isAlreadyExists(error) {
+  return error instanceof Error && 'code' in error && error.code === 'EEXIST'
+}
+
+/**
+ * clasp を 1 回実行する。失敗したらそこで止める。
+ *
+ * @param {string[]} args
+ */
 function clasp(args) {
   console.log(`$ clasp ${args.join(' ')}`)
   const result = spawnSync('pnpm', ['exec', 'clasp', ...args], { stdio: 'inherit' })
@@ -34,6 +52,24 @@ function clasp(args) {
   }
   if (result.status !== 0) {
     fail(`clasp ${args[0]} が失敗しました（終了コード ${result.status}）`)
+  }
+}
+
+/** `.clasp.json` を読む。無い・壊れている場合は理由を示して止める。 */
+async function readClaspConfig() {
+  let text
+  try {
+    text = await readFile(CLASP_CONFIG, 'utf8')
+  } catch {
+    fail(
+      `${CLASP_CONFIG} がありません。` +
+        '.clasp.json.example をコピーして scriptId を埋めるか、環境変数 GAS_SCRIPT_ID を設定してください'
+    )
+  }
+  try {
+    return JSON.parse(text)
+  } catch {
+    return fail(`${CLASP_CONFIG} を JSON として読めませんでした。中身を確認してください`)
   }
 }
 
@@ -49,21 +85,23 @@ if (scriptId) {
     await writeFile(CLASP_CONFIG, `${JSON.stringify({ scriptId, rootDir: ROOT_DIR }, null, 2)}\n`, { flag: 'wx' })
     console.log(`${CLASP_CONFIG} を GAS_SCRIPT_ID から生成しました`)
   } catch (error) {
-    if (error.code !== 'EEXIST') {
+    if (!isAlreadyExists(error)) {
       throw error
+    }
+    // 既にある設定は残す。ただし GAS_SCRIPT_ID を黙って捨てると、
+    // 別のスクリプトを指した .clasp.json のまま push してしまう。
+    const existing = await readClaspConfig()
+    if (existing.scriptId !== scriptId) {
+      fail(
+        `${CLASP_CONFIG} の scriptId（${existing.scriptId}）が GAS_SCRIPT_ID（${scriptId}）と食い違っています。\n` +
+          `反映先を確かめたうえで、${CLASP_CONFIG} を消すか GAS_SCRIPT_ID を合わせてください。`
+      )
     }
   }
 }
 
 // 読めなければ、この先 clasp が何も特定できない。先に理由を示して止める。
-try {
-  await readFile(CLASP_CONFIG, 'utf8')
-} catch {
-  fail(
-    `${CLASP_CONFIG} がありません。` +
-      '.clasp.json.example をコピーして scriptId を埋めるか、環境変数 GAS_SCRIPT_ID を設定してください'
-  )
-}
+await readClaspConfig()
 
 const { version } = JSON.parse(await readFile('package.json', 'utf8'))
 const description = `CrossGantt ${version}`

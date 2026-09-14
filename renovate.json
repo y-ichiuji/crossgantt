@@ -29,24 +29,15 @@
   },
   "osvVulnerabilityAlerts": true,
   "dependencyDashboardOSVVulnerabilitySummary": "unresolved",
-  "minimumReleaseAge": "3 days",
+  "minimumReleaseAge": "7 days",
   "packageRules": [
     {
-      "description": "devDependencies のパッチ・マイナーは CI が通れば自動マージする",
-      "matchDepTypes": ["devDependencies"],
-      "matchUpdateTypes": ["patch", "minor"],
-      "automerge": true,
-      "automergeType": "pr",
-      "platformAutomerge": true
-    },
-    {
-      "description": "本番依存とメジャー更新は必ず人が確認する",
-      "matchDepTypes": ["dependencies"],
+      "description": "自動マージはしない。main に入った変更はそのまま本番のデプロイ対象になるため、必ず人が中身を見てからマージする",
+      "matchPackageNames": ["*"],
       "automerge": false
     },
     {
       "matchUpdateTypes": ["major"],
-      "automerge": false,
       "addLabels": ["major"]
     },
     {
@@ -73,15 +64,7 @@
       "description": "GitHub Actions はコミットハッシュで固定したまま毎週まとめて上げる",
       "matchManagers": ["github-actions"],
       "groupName": "github-actions",
-      "pinDigests": true,
-      "automerge": true,
-      "automergeType": "pr",
-      "platformAutomerge": true
-    },
-    {
-      "description": "pnpm 本体は packageManager フィールドの完全性ハッシュごと更新する",
-      "matchDepTypes": ["packageManager"],
-      "automerge": false
+      "pinDigests": true
     }
   ]
 }

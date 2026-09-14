@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config'
+import { configDefaults, defineConfig } from 'vitest/config'
 
 /**
  * テストは実装ファイルと同じディレクトリに `*.test.ts(x)` として置く。
@@ -13,7 +13,8 @@ export default defineConfig({
         test: {
           name: 'server',
           include: ['src/**/*.test.ts'],
-          exclude: ['src/client/**'],
+          // 既定の除外（node_modules など）を消さないよう、足す形で書く。
+          exclude: [...configDefaults.exclude, 'src/client/**'],
           environment: 'node'
         }
       },

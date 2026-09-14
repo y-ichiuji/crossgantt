@@ -75,3 +75,6 @@ Backlog のレート制限は区分ごとに 1 分あたりの回数で効きま
 
 GitHub Flow。変更は短命なトピックブランチから PR を出し、`main` へマージされると
 CI と CodeQL の両方が成功したのちに自動デプロイされます。
+
+デプロイは GitHub の `production` Environment に属していて、`main` 以外のコミットは対象外です。
+`main` に入った変更は人の確認を経ずに本番へ出るため、Renovate を含めて自動マージは行いません。

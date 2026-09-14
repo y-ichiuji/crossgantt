@@ -18,8 +18,13 @@ jobs:
   verify:
     name: 静的解析とテスト
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # この先で依存のインストールスクリプトや各種 CLI を動かすため、
+          # GITHUB_TOKEN を .git/config に残さない。
+          persist-credentials: false
 
       # packageManager に sha512 ハッシュを書いてあるため、corepack が
       # pnpm 本体の完全性を検証したうえで取得する。
@@ -62,8 +67,13 @@ jobs:
   build:
     name: ビルド
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          # この先で依存のインストールスクリプトや各種 CLI を動かすため、
+          # GITHUB_TOKEN を .git/config に残さない。
+          persist-credentials: false
 
       - name: corepack を有効化
         run: corepack enable
