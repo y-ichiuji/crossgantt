@@ -216,12 +216,14 @@ function cachedProjects(ctx: ApiContext, authed: Authed, bypass: boolean): Proje
  * 取りに行けば済む。プロジェクトを数十個選ぶ使い方では、この差が
  * そのままレート制限への当たりになる。
  *
- * 返り値は `projectIds` と同じ並びで、取得できなかったプロジェクトは null のまま
- * 返す。空配列に畳むと、呼び出し側が「取得に失敗した」と「本当に 0 件」を
- * 見分けられなくなり、一時的な失敗が「該当なし」として表に出てしまう。
+ * 返り値は `projectIds` と同じ並びで、取得できなかったプロジェクトは失敗を表す
+ * `BacklogApiError` のまま返す。空配列に畳むと、呼び出し側が「取得に失敗した」と
+ * 「本当に 0 件」を見分けられなくなり、一時的な失敗が「該当なし」として表に出て
+ * しまう。null に畳んでも、403 や 404（参照できない）と 429 や 5xx（いま取れない）
+ * の区別が失われ、呼び出し側は失敗の重さに応じた扱いを選べない。
  *
  * @param fetchMissing キャッシュに無いプロジェクトだけを渡される。返り値は引数と
- *   同じ並びで、取得できなかったプロジェクトは null。
+ *   同じ並びで、取得できなかったプロジェクトは `BacklogApiError`。
  */
 function cachedPerProject<T>(
   ctx: ApiContext,
@@ -229,9 +231,10 @@ function cachedPerProject<T>(
   scope: string,
   projectIds: number[],
   bypass: boolean,
-  fetchMissing: (ids: number[]) => (T[] | null)[]
-): (T[] | null)[] {
+  fetchMissing: (ids: number[]) => (T[] | BacklogApiError)[]
+): (T[] | BacklogApiError)[] {
   const found = new Map<number, T[]>()
+  const failed = new Map<number, BacklogApiError>()
   const missing: number[] = []
 
   for (const projectId of projectIds) {
@@ -250,9 +253,10 @@ function cachedPerProject<T>(
   if (missing.length > 0) {
     for (const [index, list] of fetchMissing(missing).entries()) {
       const projectId = missing[index]
-      if (list === null) {
+      if (list instanceof BacklogApiError) {
         // 取得できなかったプロジェクト。空の結果をキャッシュすると、
         // 権限が戻った後も 30 分は空のまま配ることになる。
+        failed.set(projectId, list)
         continue
       }
       found.set(projectId, list)
@@ -260,22 +264,40 @@ function cachedPerProject<T>(
     }
   }
 
-  return projectIds.map((projectId) => found.get(projectId) ?? null)
+  return projectIds.map(
+    (projectId) =>
+      found.get(projectId) ?? failed.get(projectId) ?? new BacklogApiError(502, 'Backlog の応答を受け取れませんでした')
+  )
 }
 
 /**
  * ステータス一覧をキャッシュ経由で取得する。キーの定義を 1 か所に保つため関数にしている。
  *
- * 1 件も取れなかった場合は一時的な失敗として投げる。ここで空の一覧を返すと
- * `resolveStatusIds` が空の ID 群を返し、呼び出し元が「条件に合う課題が無い」として
- * 0 件を返してしまう。その結果はキャッシュにも載るため、Backlog が復旧しても
- * しばらく空のまま配り続けることになる。
+ * 取れなかったプロジェクトがあれば、一時的な失敗として投げる。ここで欠けたまま
+ * 返すと `resolveStatusIds` が返す ID 群からそのプロジェクトのカスタムステータスが
+ * 落ち、その ID 群で課題を引くため、該当する課題が 1 件も返らない。打ち切りではない
+ * ので `truncated` も立たず、画面では「該当なし」と見分けが付かない。しかもその結果は
+ * 課題のキャッシュに載るため、Backlog が復旧してもしばらく配り続けることになる。
+ *
+ * 403 や 404 だけは例外とする。参加から外された直後などプロジェクト側が理由であり、
+ * 待っても変わらない。ここで投げると 1 つの死んだプロジェクトで画面全体が開かなく
+ * なるため、記録に残したうえで残りを返す。
  */
 function cachedStatusGroups(ctx: ApiContext, authed: Authed, projectIds: number[], bypass: boolean): StatusGroup[] {
   const lists = cachedPerProject<BacklogStatus>(ctx, 'statuses', authed.scope, projectIds, bypass, (ids) =>
     fetchProjectStatuses(authed.client, ids)
   )
-  const fetched = lists.filter((list): list is BacklogStatus[] => list !== null)
+  const fetched: BacklogStatus[][] = []
+  for (const [index, list] of lists.entries()) {
+    if (!(list instanceof BacklogApiError)) {
+      fetched.push(list)
+      continue
+    }
+    if (list.status !== 403 && list.status !== 404) {
+      throw new ApiFailure(503, 'ステータス情報を取得できませんでした。少し待ってからやり直してください')
+    }
+    ctx.log(`ステータス情報を取得できませんでした (projectId=${projectIds[index]})`, list)
+  }
   if (projectIds.length > 0 && fetched.length === 0) {
     throw new ApiFailure(503, 'ステータス情報を取得できませんでした。少し待ってからやり直してください')
   }
@@ -355,7 +377,8 @@ function handleMembers(ctx: ApiContext, params: ApiParams): MemberSummary[] {
   )
   // 取得できなかったプロジェクトは候補に足さない。担当者の選択肢が欠けても
   // 画面は成立するため、ステータスと違ってここでは失敗扱いにしない。
-  return mergeMembers(lists.filter((list): list is BacklogUser[] => list !== null))
+  // ステータスと違い、この一覧は課題検索の条件には効かない。
+  return mergeMembers(lists.filter((list): list is BacklogUser[] => !(list instanceof BacklogApiError)))
 }
 
 /** 課題取得の本体。ページングとクエリのマージはここで完結させる。 */
@@ -471,7 +494,11 @@ function handleIcons(ctx: ApiContext, params: ApiParams): Record<string, string>
   for (const [index, content] of contents.entries()) {
     const userId = missing[index]
     if (content instanceof BacklogApiError) {
-      ctx.log('アイコンの取得に失敗しました', userId)
+      // 第 2 引数は例外を渡すところ。ユーザー ID だけを渡すと状態コードが
+      // ログに残らず、404（もともとアイコンが無い）と 429 や 5xx（いま取れない）を
+      // 後から見分けられなくなる。すぐ下の分岐が拠り所にしている区別なので、
+      // ID は本文に添えたうえで例外そのものを渡す。
+      ctx.log(`アイコンの取得に失敗しました (userId=${userId})`, content)
       // 覚えておくのは 404 だけにする。退会済みユーザーのアイコンは 404 になり
       // 続けるので覚える価値があるが、429 や 5xx は次には取れる。一時的な失敗まで
       // 覚えると、レート制限に 1 度触れただけで 30 分アイコンが消える。

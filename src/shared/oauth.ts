@@ -26,8 +26,10 @@ export const TOKEN_PATH = '/api/v2/oauth2/token'
 /**
  * state に載せる要素の区切り文字。
  *
- * `URLSearchParams.toString()` は `|` を必ず `%7C` へ変換するため、
- * 3 番目の要素（表示条件のクエリ文字列）に生の `|` は現れない。
+ * 3 番目の要素（表示条件のクエリ文字列）は `filterToQuery`（`shared/filter.ts`）が
+ * 組み立てる。値を通すのは `encodeURIComponent` で、これは `|` を必ず `%7C` へ
+ * 変換する。符号化せずに書き出しているのは `projects` / `assignees`（数字と `,`）と
+ * `group`（英小文字と `,`）だけなので、いずれの経路でも生の `|` は現れない。
  */
 const STATE_SEPARATOR = '|'
 

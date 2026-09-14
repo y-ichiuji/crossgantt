@@ -154,8 +154,15 @@ export const TEST_OAUTH: OAuthConfig = {
 
 export type TestApiContext = ApiContext & {
   store: MemoryUserStore
-  /** `log` に渡された内容。 */
+  /** `log` に渡されたメッセージ。 */
   logs: string[]
+  /**
+   * `log` に渡された第 2 引数（例外）。
+   *
+   * メッセージだけを覚えていると、呼び出し側が例外の代わりに別の値を
+   * 渡していても検査を素通りしてしまう。原因を残せているかを見るために持つ。
+   */
+  loggedErrors: unknown[]
 }
 
 /** API の実行文脈をインメモリで組み立てる。 */
@@ -171,6 +178,7 @@ export function createTestApiContext(
 ): TestApiContext {
   const now = options.now ?? (() => TEST_NOW)
   const logs: string[] = []
+  const loggedErrors: unknown[] = []
   return {
     now,
     store: options.store ?? createMemoryUserStore(),
@@ -186,9 +194,11 @@ export function createTestApiContext(
     },
     oauth: options.oauth === undefined ? TEST_OAUTH : options.oauth,
     withLock: (produce) => produce(),
-    log: (message) => {
+    log: (message, error) => {
       logs.push(message)
+      loggedErrors.push(error)
     },
-    logs
+    logs,
+    loggedErrors
   }
 }

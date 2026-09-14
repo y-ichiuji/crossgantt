@@ -4,7 +4,7 @@
 
 import type { MemberSummary, ProjectSummary, StatusGroup, Viewer } from '../../shared/types'
 import type { BacklogProject, BacklogStatus, BacklogUser } from './api-types'
-import type { BacklogClient } from './client'
+import type { BacklogApiError, BacklogClient } from './client'
 import { isClosedStatus } from './issues'
 
 /** 日本語を含む名前の並びを揃える比較。 */
@@ -39,11 +39,11 @@ export function fetchProjects(client: BacklogClient): ProjectSummary[] {
  * 返り値はプロジェクト ID の並びと対応する。呼び出し側でプロジェクト単位に
  * キャッシュできるよう、統合はしない。
  *
- * 取得できなかったプロジェクトは null になる。参加から外された直後などに
- * 1 件が 404 を返しても、他のプロジェクトの結果まで失わないようにする。
+ * 取得できなかったプロジェクトは `BacklogApiError` になる。参加から外された直後
+ * などに 1 件が 404 を返しても、他のプロジェクトの結果まで失わないようにする。
  * 失敗と「本当に 0 件」を呼び出し側が区別できるよう、空配列には畳まない。
  */
-export function fetchProjectMembers(client: BacklogClient, projectIds: number[]): (BacklogUser[] | null)[] {
+export function fetchProjectMembers(client: BacklogClient, projectIds: number[]): (BacklogUser[] | BacklogApiError)[] {
   return client.getManySettled<BacklogUser[]>(projectIds.map((projectId) => ({ path: `/projects/${projectId}/users` })))
 }
 
@@ -64,10 +64,14 @@ export function mergeMembers(lists: BacklogUser[][]): MemberSummary[] {
  * 返り値はプロジェクト ID の並びと対応する。呼び出し側でプロジェクト単位に
  * キャッシュできるよう、統合はしない。
  *
- * 取得できなかったプロジェクトは null になる。`fetchProjectMembers` と同じく、
- * 1 件の 404 で全体を失わないようにする。
+ * 取得できなかったプロジェクトは `BacklogApiError` になる。`fetchProjectMembers`
+ * と同じく、1 件の 404 で全体を失わないようにする。ステータスは課題検索の条件に
+ * そのまま効くため、呼び出し側は失敗の中身まで見て扱いを変える。
  */
-export function fetchProjectStatuses(client: BacklogClient, projectIds: number[]): (BacklogStatus[] | null)[] {
+export function fetchProjectStatuses(
+  client: BacklogClient,
+  projectIds: number[]
+): (BacklogStatus[] | BacklogApiError)[] {
   return client.getManySettled<BacklogStatus[]>(
     projectIds.map((projectId) => ({ path: `/projects/${projectId}/statuses` }))
   )

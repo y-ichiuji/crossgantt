@@ -24,6 +24,21 @@ const SESSION: NewSession = {
 }
 
 const PROJECT = { id: 100, projectKey: 'PJA', name: 'プロジェクト A', archived: false }
+const PROJECT_B = { id: 200, projectKey: 'PJB', name: 'プロジェクト B', archived: false }
+
+/** プロジェクト 200 のステータスだけが失敗する応答を返す。 */
+function statusesFailFor200(status: number) {
+  return (request: { url: string }) => {
+    const path = new URL(request.url).pathname
+    if (path.endsWith('/projects')) {
+      return jsonResponse([PROJECT, PROJECT_B])
+    }
+    if (path.includes('/projects/200/statuses')) {
+      return textResponse(status, 'failed')
+    }
+    return backlogResponse(request.url)
+  }
+}
 
 const RANGE: ApiParams = { from: '2026-09-01', to: '2026-09-30' }
 
@@ -206,6 +221,32 @@ describe('projects / members / statuses', () => {
       data: [{ name: '未対応', color: '#ed8077', ids: [1], isClosed: false }]
     })
   })
+
+  it('一部のプロジェクトのステータスが一時的に取れなければ 503 を返す', () => {
+    const { context, stub } = loggedIn(statusesFailFor200(429))
+
+    expect(handleApiCall(context, 'issues', { ...RANGE, projectIds: '100,200' })).toMatchObject({
+      ok: false,
+      status: 503
+    })
+    // 欠けたステータス ID のまま課題を引くと、そのプロジェクトのカスタムステータスの
+    // 課題が 1 件も返らない。打ち切りではないので truncated も立たず、画面では
+    // 「該当なし」と見分けが付かないまま結果がキャッシュに載る。
+    expect(stub.requests.filter((request) => request.url.includes('/issues'))).toHaveLength(0)
+  })
+
+  it('参照できないプロジェクトのステータスは記録したうえで残りを返す', () => {
+    const { context } = loggedIn(statusesFailFor200(404))
+
+    // 待っても変わらない失敗で画面全体を止めると、死んだプロジェクトが
+    // 1 つ混ざっただけで何も見えなくなる。
+    expect(handleApiCall(context, 'statuses', { projectIds: '100,200' })).toEqual({
+      ok: true,
+      data: [{ name: '未対応', color: '#ed8077', ids: [1], isClosed: false }]
+    })
+    expect(context.logs).toContain('ステータス情報を取得できませんでした (projectId=200)')
+    expect(context.loggedErrors).toContainEqual(expect.objectContaining({ status: 404 }))
+  })
 })
 
 describe('issues', () => {
@@ -347,7 +388,10 @@ describe('icons', () => {
     const { context } = loggedIn(() => textResponse(404, 'not found'))
 
     expect(handleApiCall(context, 'icons', { userIds: '10' })).toEqual({ ok: true, data: {} })
-    expect(context.logs).toContain('アイコンの取得に失敗しました')
+    expect(context.logs).toContain('アイコンの取得に失敗しました (userId=10)')
+    // 状態コードまで残っていること。404（もともと無い）と 429 や 5xx（いま取れない）を
+    // ログから見分けられないと、アイコンが出ない原因を追えない。
+    expect(context.loggedErrors).toContainEqual(expect.objectContaining({ status: 404 }))
   })
 
   it('取得できなかったことを覚えて、繰り返し問い合わせない', () => {

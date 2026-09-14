@@ -203,7 +203,7 @@ describe('BacklogClient の部分失敗', () => {
     expect(stub.requests).toHaveLength(2)
   })
 
-  it('getManySettled は失敗した分だけを null にする', () => {
+  it('getManySettled は失敗した分だけを状態コードごと返す', () => {
     const stub = createFetcherStub((request) =>
       request.url.includes('/projects/2/') ? textResponse(404, 'not found') : jsonResponse([{ id: 1 }])
     )
@@ -214,7 +214,20 @@ describe('BacklogClient の部分失敗', () => {
       { path: '/projects/3/statuses' }
     ])
 
-    expect(results).toEqual([[{ id: 1 }], null, [{ id: 1 }]])
+    expect(results[0]).toEqual([{ id: 1 }])
+    // 失敗を null に畳むと、403 や 404（参照できない）と 429 や 5xx（いま取れない）を
+    // 呼び出し側が区別できず、一時的な失敗まで確定した結果として扱ってしまう。
+    expect(results[1]).toMatchObject({ name: 'BacklogApiError', status: 404 })
+    expect(results[2]).toEqual([{ id: 1 }])
+  })
+
+  it('getManySettled は解釈できない応答も失敗として返す', () => {
+    const stub = createFetcherStub(() => textResponse(200, 'not json'))
+
+    expect(createClient(stub).getManySettled([{ path: '/projects/1/statuses' }])[0]).toMatchObject({
+      name: 'BacklogApiError',
+      status: 502
+    })
   })
 
   it('getBinaryManySettled も 1 本の失敗で他を巻き添えにしない', () => {

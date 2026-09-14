@@ -168,10 +168,18 @@
 
 .row {
   /*
-   * z-index は指定しない。指定すると行が独自の重ね合わせ文脈を作り、
-   * 中の .rowHead が行の階層に閉じ込められて .foreground（今日線）より
-   * 手前に出られなくなる。position: relative だけなら .background より
-   * 手前、.foreground より奥という意図どおりの順序になる。
+   * z-index は指定しない。指定すると行が z-index による重ね合わせ文脈になり、
+   * 中の .rowHead（z-index: 2）が行の階層に閉じ込められて、行に与えた値が
+   * そのまま .header（z-index: 3）との前後を決めてしまう。行を 3 以上にすると
+   * 横スクロール中の課題名カラムが上端の日付ヘッダーを覆う。
+   *
+   * z-index: auto のままなら、課題行とグループ行で経路は違うが結果は同じになる。
+   * 課題行は GanttChart.tsx がインラインで付ける `content-visibility: auto`
+   * （`contain: paint` を含む）によって既に重ね合わせ文脈で、.rowHead は
+   * その中に収まる。グループ行は `composes: row` だけで content-visibility が
+   * 付かないため文脈を作らず、.rowHead は .inner の階層で解決される。
+   * どちらも .background（z-index: 0）より後ろの DOM 順に置かれるので背景の上、
+   * .header より奥という意図どおりの順序になる。
    */
   position: relative;
   display: flex;

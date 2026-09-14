@@ -10,14 +10,18 @@ function state(overrides: Partial<TooltipState> = {}): TooltipState {
 }
 
 describe('IssueTooltip', () => {
-  // innerWidth を差し替えたまま返すと、以降のテストが 1600px の環境を
+  // innerWidth / innerHeight を差し替えたまま返すと、以降のテストが 1600px の環境を
   // 前提に動いてしまい、実行順に依存した不安定な結果になる。必ず戻す。
-  const originalInnerWidth = Object.getOwnPropertyDescriptor(window, 'innerWidth')
+  const originals = new Map(
+    (['innerWidth', 'innerHeight'] as const).map((name) => [name, Object.getOwnPropertyDescriptor(window, name)])
+  )
   afterEach(() => {
-    if (originalInnerWidth) {
-      Object.defineProperty(window, 'innerWidth', originalInnerWidth)
-    } else {
-      Reflect.deleteProperty(window, 'innerWidth')
+    for (const [name, descriptor] of originals) {
+      if (descriptor) {
+        Object.defineProperty(window, name, descriptor)
+      } else {
+        Reflect.deleteProperty(window, name)
+      }
     }
   })
 
@@ -102,8 +106,23 @@ describe('IssueTooltip', () => {
     expect(screen.getByRole('tooltip').style.left).toBe('16px')
   })
 
+  it('ビューポートの下端からはみ出さない', () => {
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 600 })
+    render(<IssueTooltip state={state({ y: 590 })} />)
+    // 画面はページごとスクロールしないため、下端より下へ出すと読めなくなる。
+    // 見積もり高さ 220 と余白 16 を確保できる最大の上端（600 - 220 - 16 = 364）まで押し戻す。
+    expect(screen.getByRole('tooltip').style.top).toBe('364px')
+  })
+
+  it('ビューポートが見積もり高さより低くても上余白は確保する', () => {
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 200 })
+    render(<IssueTooltip state={state({ y: 150 })} />)
+    expect(screen.getByRole('tooltip').style.top).toBe('16px')
+  })
+
   it('余裕があればカーソルの右下に出す', () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1600 })
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 1200 })
     render(<IssueTooltip state={state({ x: 100, y: 200 })} />)
     const tooltip = screen.getByRole('tooltip')
     expect(tooltip.style.left).toBe('116px')

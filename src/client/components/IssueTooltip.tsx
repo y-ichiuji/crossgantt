@@ -14,12 +14,26 @@ export type TooltipState = {
 const MARGIN = 16
 const WIDTH = 320
 
+/**
+ * 縦方向の押し戻しに使う高さの見積もり。
+ *
+ * 実際の高さは件名の折り返しやカテゴリ・マイルストーンの有無で変わるが、
+ * 測るには描画してから位置を決め直すことになり、ホバーのたびに再レンダリングが
+ * 増える。多めに見積もっておけば、外れても下端からはみ出す側には倒れない。
+ * ツールチップは `pointer-events: none` なので、押し戻しでバーに重なっても
+ * 操作の邪魔にはならない。
+ */
+const ESTIMATED_HEIGHT = 220
+
 /** バーにホバーしたときに表示する課題の詳細。 */
 export function IssueTooltip({ state }: { state: TooltipState }) {
   const { issue, overdue } = state
   const viewportWidth = typeof window === 'undefined' ? WIDTH + MARGIN * 2 : window.innerWidth
+  const viewportHeight = typeof window === 'undefined' ? ESTIMATED_HEIGHT + MARGIN * 2 : window.innerHeight
   const left = Math.min(state.x + MARGIN, Math.max(MARGIN, viewportWidth - WIDTH - MARGIN))
-  const top = state.y + MARGIN
+  // 縦も横と同じように押し戻す。画面（.app）は height: 100vh でページ自体が
+  // スクロールしないため、下端より下に出したツールチップは読む手段が無い。
+  const top = Math.min(state.y + MARGIN, Math.max(MARGIN, viewportHeight - ESTIMATED_HEIGHT - MARGIN))
 
   const period =
     issue.startDate && issue.dueDate
