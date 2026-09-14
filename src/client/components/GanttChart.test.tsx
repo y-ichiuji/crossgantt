@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 
 import { defaultFilter } from '../../shared/filter'
+import { FALLBACK_STATUS_COLOR } from '../../shared/gantt'
 import { makeIssue, NOW, TODAY } from '../../shared/test-fixtures'
 import type { GanttIssue, Holiday, ViewFilter } from '../../shared/types'
 import { GanttChart } from './GanttChart'
@@ -126,6 +127,32 @@ describe('バーの描画', () => {
     const bar = document.querySelector('[data-testid="gantt-bar"]')
     expect(bar?.getAttribute('data-clip-start')).toBe('true')
     expect(bar?.getAttribute('data-clip-end')).toBe('true')
+  })
+})
+
+describe('行ヘッダーのステータス', () => {
+  it('課題名の末尾にステータスを出す', () => {
+    setup([makeIssue({ statusName: '処理中' })])
+    const link = screen.getByTitle('PJA-1 ログイン画面の改修')
+    expect(link.textContent).toBe('PJA-1ログイン画面の改修処理中')
+  })
+
+  it('バーと同じくステータスの色で塗る', () => {
+    setup([makeIssue({ statusColor: '#4488c5' })])
+    const badge = document.querySelector('[data-testid="issue-status"]') as HTMLElement
+    expect(badge.style.backgroundColor).toBe('#4488c5')
+  })
+
+  it('明るいステータス色の上では濃い文字にする', () => {
+    setup([makeIssue({ statusColor: '#b0be3c' })])
+    const badge = document.querySelector('[data-testid="issue-status"]') as HTMLElement
+    expect(badge.style.color).toBe('#1c2430')
+  })
+
+  it('色を持たないステータスでもフォールバックの色で塗る', () => {
+    setup([makeIssue({ statusColor: null })])
+    const badge = document.querySelector('[data-testid="issue-status"]') as HTMLElement
+    expect(badge.style.backgroundColor).toBe(FALLBACK_STATUS_COLOR)
   })
 })
 
