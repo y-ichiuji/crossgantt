@@ -36,6 +36,11 @@
   --row-height: 28px;
   --avatar-size: 18px;
   --gantt-header-height: 46px;
+  /*
+   * 件名がバーから右へ突き抜けるぶん、タイムラインの右に足す余白。
+   * 表示期間の終わり際に始まる課題でも件名を読めるだけの幅を確保する。
+   */
+  --gantt-label-overflow: 360px;
 }
 
 @media (prefers-color-scheme: dark) {
