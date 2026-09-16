@@ -281,6 +281,7 @@ function IssueRow({
   const overdue = isOverdue(issue, today)
   // Backlog のガントチャートと同じく、バーの色はステータスで決める。
   const background = statusColor(issue)
+  // 行ヘッダーのステータスバッジは文字を内側に抱えるため、色に応じて読める文字色を選ぶ。
   const foreground = readableTextColor(background)
 
   const label = `${issue.issueKey} ${issue.summary}`
@@ -323,8 +324,7 @@ function IssueRow({
           style={{
             left: geometry.left,
             width: geometry.width,
-            backgroundColor: background,
-            color: foreground
+            backgroundColor: background
           }}
           href={issue.url}
           target="_blank"
@@ -340,9 +340,23 @@ function IssueRow({
             onShowTooltip(issue, { clientX: rect.left, clientY: rect.bottom })
           }}
           onBlur={onHideTooltip}
+        />
+        {/*
+         * 件名はバーの中ではなく、バーと同じ左端から始まる独立した層に描く。
+         * バーの幅で切らないので、バーが短くても件名は右へ突き抜けて全文が読める。
+         * バーより後に置いて、重なる部分では件名が上に来るようにする。
+         *
+         * 行ヘッダーにも同じ件名があり、バーには課題キーと期間を含む `aria-label` が
+         * 付いている。読み上げが 3 度重なるため、支援技術からは隠す。
+         */}
+        <span
+          className={styles.barLabel}
+          data-testid="gantt-bar-label"
+          aria-hidden="true"
+          style={{ left: geometry.left }}
         >
-          {geometry.width >= 64 ? <span className={styles.barLabel}>{issue.summary}</span> : null}
-        </a>
+          {issue.summary}
+        </span>
       </div>
     </div>
   )

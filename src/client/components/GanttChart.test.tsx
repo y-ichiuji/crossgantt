@@ -85,12 +85,6 @@ describe('バーの描画', () => {
     expect(bar.style.backgroundColor).toBe('#4488c5')
   })
 
-  it('明るいステータス色の上では濃い文字にする', () => {
-    setup([makeIssue({ statusColor: '#b0be3c' })])
-    const bar = document.querySelector('[data-testid="gantt-bar"]') as HTMLElement
-    expect(bar.style.color).toBe('#1c2430')
-  })
-
   it('担当者のアイコン枠を行に表示する', () => {
     // 画像そのものはサーバーから data URL で届くまで現れない。
     setup([makeIssue()])
@@ -127,6 +121,37 @@ describe('バーの描画', () => {
     const bar = document.querySelector('[data-testid="gantt-bar"]')
     expect(bar?.getAttribute('data-clip-start')).toBe('true')
     expect(bar?.getAttribute('data-clip-end')).toBe('true')
+  })
+})
+
+describe('バーに添える件名', () => {
+  it('バーと同じ左端から件名を描く', () => {
+    setup([makeIssue()])
+    const bar = document.querySelector('[data-testid="gantt-bar"]') as HTMLElement
+    const barLabel = document.querySelector('[data-testid="gantt-bar-label"]') as HTMLElement
+    expect(barLabel.textContent).toBe('ログイン画面の改修')
+    expect(barLabel.style.left).toBe(bar.style.left)
+  })
+
+  it('バーの外に置いて幅で切られないようにする', () => {
+    setup([makeIssue()])
+    const bar = document.querySelector('[data-testid="gantt-bar"]') as HTMLElement
+    // バーの中にあると overflow で切られる。兄弟として同じトラックに並べる。
+    expect(bar.querySelector('[data-testid="gantt-bar-label"]')).toBeNull()
+    expect(bar.textContent).toBe('')
+  })
+
+  it('バーが短くても件名を省略しない', () => {
+    // 月ズームの 1 日ぶんは数 px しかないが、件名はそのまま右へ突き抜ける。
+    setup([makeIssue({ startDate: '2026-09-10', dueDate: '2026-09-10' })], { zoom: 'month' })
+    const barLabel = document.querySelector('[data-testid="gantt-bar-label"]') as HTMLElement
+    expect(barLabel.textContent).toBe('ログイン画面の改修')
+  })
+
+  it('行ヘッダーとバーの読み上げに重ねない', () => {
+    setup([makeIssue()])
+    const barLabel = document.querySelector('[data-testid="gantt-bar-label"]') as HTMLElement
+    expect(barLabel.getAttribute('aria-hidden')).toBe('true')
   })
 })
 

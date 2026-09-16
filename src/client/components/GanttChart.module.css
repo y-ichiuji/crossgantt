@@ -104,6 +104,8 @@
   height: var(--gantt-header-height);
   background: var(--surface);
   border-bottom: 1px solid var(--border-strong);
+  /* 行と同じ幅にする。理由は .row 側に書いた。 */
+  padding-right: var(--gantt-label-overflow);
 }
 
 .headCell {
@@ -185,6 +187,13 @@
   display: flex;
   height: var(--row-height);
   border-bottom: 1px solid var(--surface-alt);
+  /*
+   * 件名はバーの右へ突き抜ける。課題行には `content-visibility: auto`
+   * （`contain: paint` を含む）が付いていて、行のボックスからはみ出した
+   * 描画は消えるため、タイムラインの右端で件名が切れないよう余白を足す。
+   * ヘッダーにも同じ余白を入れて、横スクロールできる幅を行と揃える。
+   */
+  padding-right: var(--gantt-label-overflow);
 }
 
 .row:hover .rowHead {
@@ -323,19 +332,16 @@
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
 }
 
+/*
+ * 期間を表す帯。件名は .barLabel が別に描くため、ここは図形だけを持つ。
+ * 文字を抱えないので、完了課題の半透明や期限マーカーの斜め変形、
+ * 終端をぼかすマスクが件名の読みやすさに響くことはない。
+ */
 .bar {
   position: absolute;
   top: 4px;
   height: calc(var(--row-height) - 9px);
   border-radius: var(--radius-sm);
-  display: flex;
-  align-items: center;
-  padding: 0 6px;
-  overflow: hidden;
-  text-decoration: none;
-  color: #ffffff;
-  font-size: 11px;
-  white-space: nowrap;
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
 }
 
@@ -374,9 +380,35 @@
   border-bottom-right-radius: 0;
 }
 
+/*
+ * バーに添える件名。左端はバーと揃え、右はバーの幅に関係なく全文を描く。
+ * 短いバーでも件名が省略されないため、行ヘッダーの幅に頼らず内容が読める。
+ *
+ * z-index は指定しない。バーより後の DOM に置いてあり、どちらも
+ * z-index: auto なので DOM 順どおり件名がバーの上に重なる。値を与えると
+ * 行ヘッダー（z-index: 2）との前後まで自分で決めることになり、横スクロール中に
+ * 件名が固定カラムを覆う。
+ */
 .barLabel {
-  overflow: hidden;
-  text-overflow: ellipsis;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  /* .bar が持っていた左の余白と同じ値。バーの左端から字が離れすぎない。 */
+  padding-left: 6px;
+  font-size: 11px;
+  white-space: nowrap;
+  /*
+   * 先頭から末尾まで本文色で通す。バーに重なる部分だけ色を変えると
+   * 1 つの文に 2 色が混ざり、かえって読みづらい。
+   */
+  color: var(--text);
+  /*
+   * 件名はバーの上に重なる。当たり判定を持つと、その部分ではバーを
+   * クリックもホバーもできなくなるため、描くだけにする。
+   */
+  pointer-events: none;
 }
 
 .empty {
